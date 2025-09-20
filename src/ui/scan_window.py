@@ -701,17 +701,55 @@ class ScanWindow(CTkToplevel):
             self.scan_focus_clear()
 
     def _build_stats_strip(self):
-        self.stats_frame = CTkFrame(self, fg_color=("#f1f5f9", "#12263a"), corner_radius=10)
-        self.stats_frame.pack(fill="x", padx=12, pady=(0, 10))
-        stats = [("Total Rows", self.stats_vars["total"]),( "Attended", self.stats_vars["attended"]),( "Attendance %", self.stats_vars["percent"])]
-        if self.restrictions.get("exam"): stats.append(("Missing Exam", self.stats_vars["missing_exam"]))
-        if self.restrictions.get("homework"): stats.append(("Missing H.W.", self.stats_vars["missing_hw"]))
-        for idx, (label, var) in enumerate(stats):
-            block = CTkFrame(self.stats_frame, fg_color="transparent")
-            block.grid(row=0, column=idx, sticky="w", padx=(12 if idx == 0 else 8, 8), pady=10)
-            CTkLabel(block, text=label, font=("Arial", 11, "bold")).pack(anchor="w")
-            CTkLabel(block, textvariable=var, font=("Arial", 16)).pack(anchor="w")
+        self.stats_frame = CTkFrame(self, fg_color=("#f1f5f9", "#12263a"), corner_radius=16)
+        self.stats_frame.pack(fill="x", padx=24, pady=(0, 18))
+
+        # Card definitions: label, var, icon, is_progress
+        card_defs = [
+            {"label": "Total Rows", "var": self.stats_vars["total"], "icon": "group.png", "is_progress": False},
+            {"label": "Attended", "var": self.stats_vars["attended"], "icon": "check_circle.png", "is_progress": False},
+            {"label": "Attendance %", "var": self.stats_vars["percent"], "icon": "percent.png", "is_progress": True},
+        ]
+        if self.restrictions.get("exam"):
+            card_defs.append({"label": "Missing Exam", "var": self.stats_vars["missing_exam"], "icon": "warning.png", "is_progress": False})
+        if self.restrictions.get("homework"):
+            card_defs.append({"label": "Missing H.W.", "var": self.stats_vars["missing_hw"], "icon": "warning.png", "is_progress": False})
+
+        for idx, card in enumerate(card_defs):
+            card_frame = CTkFrame(
+                self.stats_frame,
+                fg_color=("#ffffff", "#232a36"),
+                corner_radius=14,
+                width=140,
+                height=90
+            )
+            card_frame.grid(row=0, column=idx, sticky="nsew", padx=(0 if idx == 0 else 16, 0), pady=8)
             self.stats_frame.grid_columnconfigure(idx, weight=1)
+
+            # Icon
+            icon_img = self._load_icon(card["icon"], size=(32, 32))
+            icon_label = CTkLabel(card_frame, image=icon_img, text="", width=36)
+            icon_label.pack(side="top", anchor="center", pady=(10, 0))
+
+            # Number or Progress
+            if card["is_progress"]:
+                # Attendance % as circular progress bar
+                percent_str = self.stats_vars["percent"].get().replace("%", "")
+                try:
+                    percent_val = float(percent_str) / 100.0
+                except Exception:
+                    percent_val = 0.0
+                progress_frame = CTkFrame(card_frame, fg_color="transparent")
+                progress_frame.pack(side="top", anchor="center", pady=(2, 0))
+                progress = CTkProgressBar(progress_frame, width=48, height=8)
+                progress.set(percent_val)
+                progress.pack(side="top", anchor="center")
+                CTkLabel(card_frame, textvariable=self.stats_vars["percent"], font=("Arial", 18, "bold"), text_color=("#00639c", "#a9c8e7")).pack(side="top", anchor="center", pady=(2, 0))
+            else:
+                CTkLabel(card_frame, textvariable=card["var"], font=("Arial", 22, "bold"), text_color=("#1b1c1e", "#e3e2e6")).pack(side="top", anchor="center", pady=(2, 0))
+
+            # Label
+            CTkLabel(card_frame, text=card["label"], font=("Arial", 11), text_color=("#43474e", "#cac4d0")).pack(side="top", anchor="center", pady=(2, 8))
 
     def _apply_treeview_style(self):
         mode = ctk.get_appearance_mode()
