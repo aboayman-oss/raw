@@ -931,14 +931,14 @@ class ScanWindow(CTkToplevel):
         self.stats_frame.pack(fill="x", padx=24, pady=(0, 8))
 
         card_defs = [
-            {"label": "Total Rows", "var": self.stats_vars["total"], "icon": "group.png", "is_progress": False},
+            {"label": "Total Students", "var": self.stats_vars["total"], "icon": "group.png", "is_progress": False},
             {"label": "Attended", "var": self.stats_vars["attended"], "icon": "check_circle.png", "is_progress": False},
-            {"label": "Attendance %", "var": self.stats_vars["percent"], "icon": "percent.png", "is_progress": True},
+            {"label": "Attendance", "var": self.stats_vars["percent"], "icon": "group.png", "is_progress": True},
         ]
         if self.restrictions.get("exam"):
             card_defs.append({"label": "Missing Exam", "var": self.stats_vars["missing_exam"], "icon": "warning.png", "is_progress": False})
         if self.restrictions.get("homework"):
-            card_defs.append({"label": "Missing H.W.", "var": self.stats_vars["missing_hw"], "icon": "warning.png", "is_progress": False})
+            card_defs.append({"label": "Missing Homework", "var": self.stats_vars["missing_hw"], "icon": "warning.png", "is_progress": False})
 
         # Place all cards in a single horizontal line, centered
         for idx, card in enumerate(card_defs):
