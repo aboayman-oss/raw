@@ -13,9 +13,11 @@ from PIL import Image
 from core.session_manager import SessionManager
 from ui.dialogs.session_setup_dialog import SessionSetupDialog
 from ui.dialogs.session_summary_dialog import SessionSummaryDialog
-from ui.past_sessions_window import PastSessionsWindow
+
 from ui.scan_window import ScanWindow
 from ui.settings_window import SettingsWindow
+from tkinter import messagebox # Ensure this is imported for _clear_all_sessions
+from ui.components.past_session_list_item import PastSessionListItem
 from utils.helpers import (
     LAST_DATA_FILE,
     LOGO_FILE,
@@ -107,7 +109,7 @@ class App(CTk):
         dashboard_button = ctk.CTkButton(nav_rail, text="Dashboard", image=self.dashboard_icon, compound="left", command=self._show_dashboard_view)
         dashboard_button.pack(pady=10, padx=10)
         
-        past_sessions_button = ctk.CTkButton(nav_rail, text="Past Sessions", image=self.past_sessions_icon, compound="left", command=self.view_past_sessions)
+        past_sessions_button = ctk.CTkButton(nav_rail, text="Past Sessions", image=self.past_sessions_icon, compound="left", command=self._show_past_sessions_view)
         past_sessions_button.pack(pady=10, padx=10)
         
         settings_button = ctk.CTkButton(nav_rail, text="Settings", image=self.settings_icon, compound="left", command=self.open_settings)
@@ -335,13 +337,126 @@ class App(CTk):
             self.set_status("Failed to reveal session.")
             return False
 
-    def view_past_sessions(self):
-        if self.past_sessions_window is not None and self.past_sessions_window.winfo_exists():
-            bring_window_to_front(self.past_sessions_window)
+    
+
+    def _format_size(self, size_bytes):
+        if size_bytes < 1024:
+            return f"{size_bytes} B"
+        if size_bytes < 1024 * 1024:
+            return f"{size_bytes / 1024:.1f} KB"
+        return f"{size_bytes / (1024 * 1024):.2f} MB"
+
+    def _clear_all_sessions(self):
+        # NOTE: This method is copied almost verbatim.
+        # It scans the SESSIONS_FOLDER and deletes files.
+        if not os.path.isdir(SESSIONS_FOLDER): return
+
+        paths_to_delete = [
+            os.path.join(SESSIONS_FOLDER, entry)
+            for entry in os.listdir(SESSIONS_FOLDER)
+            if os.path.isfile(os.path.join(SESSIONS_FOLDER, entry))
+        ]
+
+        if not paths_to_delete: return
+
+        confirm = messagebox.askyesno(
+            "Clear All Sessions",
+            f"This will permanently delete {len(paths_to_delete)} session file(s). Are you sure?",
+            parent=self # Use 'self' as the parent window
+        )
+        if not confirm: return
+
+        failures = []
+        for path_entry in paths_to_delete:
+            try:
+                os.remove(path_entry)
+            except Exception as exc:
+                failures.append(f"{os.path.basename(path_entry)}: {exc}")
+
+        self._populate_past_sessions_list() # Refresh the current view
+        self._refresh_recent_sessions()     # Also refresh the dashboard view
+
+        if failures:
+            messagebox.showerror(
+                "Delete Failed",
+                "Some session files could not be deleted:\n" + "\n".join(failures),
+                parent=self
+            )
+            self.set_status("Some past sessions could not be removed.")
+        else:
+            messagebox.showinfo(
+                "Sessions Cleared",
+                "All past session files have been deleted.",
+                parent=self
+            )
+            self.set_status("All past sessions cleared.")
+
+    def _show_past_sessions_view(self):
+        """Clears the content frame and builds the past sessions view."""
+        for widget in self.content_frame.winfo_children():
+            widget.destroy()
+        self._build_past_sessions_view()
+
+    def _build_past_sessions_view(self):
+        """Builds the UI for browsing past sessions within the content_frame."""
+        self.content_frame.grid_rowconfigure(1, weight=1)
+        self.content_frame.grid_columnconfigure(0, weight=1)
+
+        # Header with title and global actions
+        header_frame = ctk.CTkFrame(self.content_frame, fg_color="transparent")
+        header_frame.grid(row=0, column=0, sticky="ew", pady=(0, 12))
+        header_frame.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(header_frame, text="Past Sessions", font=("Arial", 24, "bold")).grid(row=0, column=0, sticky="w")
+
+        action_buttons_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
+        action_buttons_frame.grid(row=0, column=1, sticky="e")
+
+        ctk.CTkButton(action_buttons_frame, text="Refresh", command=self._populate_past_sessions_list).pack(side="left", padx=(0, 10))
+
+        self.clear_all_btn = ctk.CTkButton(action_buttons_frame, text="Clear All", command=self._clear_all_sessions)
+        self.clear_all_btn.pack(side="left")
+
+        # Scrollable frame for the list
+        self.sessions_list_frame = ctk.CTkScrollableFrame(self.content_frame, label_text="Session Files")
+        self.sessions_list_frame.grid(row=1, column=0, sticky="nsew")
+        self.sessions_list_frame.grid_columnconfigure(0, weight=1)
+
+        # Populate the list with session data
+        self._populate_past_sessions_list()
+
+    def _populate_past_sessions_list(self):
+        """Fetches session data and populates the scrollable list with custom widgets."""
+        for widget in self.sessions_list_frame.winfo_children():
+            widget.destroy()
+
+        if not os.path.isdir(SESSIONS_FOLDER):
+            files = []
+        else:
+            files = []
+            for entry in os.listdir(SESSIONS_FOLDER):
+                path_entry = os.path.join(SESSIONS_FOLDER, entry)
+                if os.path.isfile(path_entry) and entry.lower().endswith((".csv", ".xlsx")):
+                    stats = os.stat(path_entry)
+                    files.append((path_entry, stats.st_mtime, stats.st_size))
+            files.sort(key=lambda item: item[1], reverse=True)
+
+        self.clear_all_btn.configure(state="normal" if files else "disabled")
+
+        if not files:
+            ctk.CTkLabel(self.sessions_list_frame, text="No session files found.").pack(pady=20)
             return
-        self.past_sessions_window = PastSessionsWindow(self)
-        bring_window_to_front(self.past_sessions_window)
-        self.set_status("Browsing past sessions.")
+
+        for path, modified, size in files:
+            PastSessionListItem(
+                master=self.sessions_list_frame,
+                path=path,
+                modified_timestamp=modified,
+                size_bytes=size,
+                format_size_func=self._format_size,
+                open_func=self._open_session_path,
+                reveal_func=self._reveal_session_path
+            ).pack(fill="x", expand=True, padx=10, pady=5)
 
     def _load_last_data(self):
         self.data_df = None
