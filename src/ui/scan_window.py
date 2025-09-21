@@ -93,6 +93,19 @@ STATUS_STYLES = {
 
 
 class ScanWindow(CTkToplevel):
+    def _reset_treeview_sort(self):
+        """Restore Treeview rows to their original order."""
+        self._tree_sort_column = None
+        self._tree_sort_reverse = False
+        # Detach all
+        for iid in self._all_iids:
+            if self.tree.exists(iid):
+                self.tree.detach(iid)
+        # Re-attach in original order
+        for iid in self._all_iids:
+            if self.tree.exists(iid):
+                self.tree.reattach(iid, '', 'end')
+
     def __init__(self, parent, session_mgr, read_only=False):
         super().__init__(parent)
         self.parent = parent
@@ -533,6 +546,18 @@ class ScanWindow(CTkToplevel):
         filter_icon = self._load_icon("filter.png", size=(28, 28))
         self.filter_button = CTkButton(search_filter_frame, width=44, height=44, text="", image=filter_icon, fg_color=("#e3eafc", "#232a36"), corner_radius=22, command=self._on_filter_click)
         self.filter_button.pack(side="left", padx=(8, 0))
+        reset_icon = self._load_icon("reset.png", size=(28, 28))
+        self.reset_sort_button = CTkButton(
+            search_filter_frame,
+            text="Reset Sort",
+            image=reset_icon,
+            width=120,
+            height=44,
+            fg_color=("#e3eafc", "#232a36"),
+            corner_radius=22,
+            command=self._reset_treeview_sort
+        )
+        self.reset_sort_button.pack(side="left", padx=(8, 0))
 
         # --- Actions (Far Right) ---
         actions_frame = CTkFrame(top_bar, fg_color="transparent")
@@ -587,6 +612,74 @@ class ScanWindow(CTkToplevel):
         # Bind up/down arrow keys for navigation
         self.tree.bind("<Up>", self._on_tree_up_down)
         self.tree.bind("<Down>", self._on_tree_up_down)
+
+        # --- Column Sorting ---
+        self._tree_sort_column = None
+        self._tree_sort_reverse = False
+        for col in cols:
+            self.tree.heading(col, command=lambda c=col: self._on_treeview_sort(c))
+
+        # --- Reset Sort Button (icon-only, next to filter) ---
+        reset_icon = self._load_icon("reset.png", size=(28, 28))
+        self.reset_sort_button = CTkButton(
+            search_filter_frame,
+            text="",
+            image=reset_icon,
+            width=44,
+            height=44,
+            fg_color=("#e3eafc", "#232a36"),
+            corner_radius=22,
+            command=self._reset_treeview_sort
+        )
+        self.reset_sort_button.pack(side="left", padx=(8, 0))
+
+    def _on_treeview_sort(self, col):
+        # Get all items and their values for the column
+        items = [(iid, self.tree.set(iid, col)) for iid in self._all_iids if self.tree.exists(iid)]
+        # Determine if numeric sort (for exam/homework)
+        def is_number(val):
+            try:
+                float(val)
+                return True
+            except Exception:
+                return False
+        numeric_cols = {"exam", "homework"}
+        # Use str(v).strip() to avoid attribute error
+        def parse_score(val):
+            val = str(val).strip()
+            if not val:
+                return float('-inf')  # Treat empty as lowest
+            if '/' in val:
+                try:
+                    score, total = val.split('/', 1)
+                    return float(score) / float(total) if float(total) != 0 else float('-inf')
+                except Exception:
+                    return float('-inf')
+            try:
+                return float(val)
+            except Exception:
+                return float('-inf')
+
+        def sort_key(item):
+            val = item[1]
+            if col in {"exam", "homework"}:
+                return parse_score(val)
+            else:
+                return str(val).lower()
+        # Toggle sort order if same column
+        if self._tree_sort_column == col:
+            self._tree_sort_reverse = not self._tree_sort_reverse
+        else:
+            self._tree_sort_column = col
+            self._tree_sort_reverse = False
+        sorted_items = sorted(items, key=sort_key, reverse=self._tree_sort_reverse)
+        # Detach all
+        for iid in self._all_iids:
+            if self.tree.exists(iid):
+                self.tree.detach(iid)
+        # Re-attach in sorted order
+        for iid, _ in sorted_items:
+            self.tree.reattach(iid, '', 'end')
     def _on_tree_enter(self, event):
         # Simulate double-click on selected row when Enter is pressed
         selected = self.tree.selection()
