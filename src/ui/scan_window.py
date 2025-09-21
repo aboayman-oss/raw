@@ -197,7 +197,7 @@ class ScanWindow(CTkToplevel):
         top_bar = CTkFrame(panel, fg_color="transparent")
         top_bar.pack(fill="x", padx=0, pady=(0,0))
         CTkLabel(top_bar, text="Filters", font=("Arial", 14, "bold"), anchor="w").pack(side="left", padx=(12,0), pady=(10,0))
-        x_icon = self._load_icon("error.png", size=(20, 20))
+        x_icon = self._load_icon("close.png", size=(20, 20))
         dismiss_btn = CTkButton(top_bar, text="", image=x_icon, width=32, height=32, fg_color="transparent", command=self._hide_filter_panel)
         dismiss_btn.pack(side="right", padx=(0,8), pady=(10,0))
 
@@ -263,6 +263,61 @@ class ScanWindow(CTkToplevel):
         # Change icon to filled if filter active
         icon_name = "filter.png" if not self._filter_active else "filter_filled.png"
         self.filter_button.configure(image=self._load_icon(icon_name, size=(28, 28)))
+
+    # --------------------------------------------------------------------------
+    # Modern: Edit Notes Modal on Treeview Right-Click
+    # --------------------------------------------------------------------------
+    def _on_tree_right_click(self, event):
+        # Get row under mouse
+        iid = self.tree.identify_row(event.y)
+        if not iid:
+            return
+        # Open modal dialog for editing notes
+        self._open_edit_notes_modal(iid)
+
+    def _open_edit_notes_modal(self, iid):
+        # Get current notes
+        current_notes = self.tree.set(iid, "notes")
+        student_name = self.tree.set(iid, "name") or "Student"
+        modal = CTkToplevel(self)
+        modal.title(f"Edit Notes - {student_name}")
+        modal.geometry("420x260")
+        modal.transient(self)
+        modal.grab_set()
+        modal.resizable(False, False)
+        modal.attributes("-topmost", True)
+
+        # Modal styling
+        frame = CTkFrame(modal, fg_color=(LIGHT_SURFACE, DARK_SURFACE), corner_radius=16)
+        frame.pack(fill="both", expand=True, padx=18, pady=18)
+
+        CTkLabel(frame, text=f"Edit Notes for {student_name}", font=("Arial", 15, "bold"), anchor="w").pack(anchor="w", pady=(0,8))
+        notes_box = CTkTextbox(frame, width=360, height=90, font=("Arial", 13), corner_radius=10)
+        notes_box.pack(fill="x", pady=(0,12))
+        notes_box.insert("1.0", current_notes)
+
+        # Save button
+        def save_notes():
+            new_notes = notes_box.get("1.0", "end-1c")
+            self._update_row(iid, self.tree.set(iid, "attendance"), new_notes, self.tree.set(iid, "timestamp"))
+            self._refresh_stats()
+            modal.destroy()
+
+        save_btn = CTkButton(frame, text="Save", fg_color=("#00639c", "#a9c8e7"), text_color=("#fff", "#232a36"), font=("Arial", 13, "bold"), command=save_notes, width=120, height=38)
+        save_btn.pack(side="right", pady=(8,0))
+
+        # Focus for quick editing
+        notes_box.focus_set()
+
+        # Allow closing with Escape
+        modal.bind("<Escape>", lambda e: modal.destroy())
+
+    def _bind_tree_right_click(self):
+        # Bind right-click to treeview for notes editing
+        self.tree.bind("<Button-3>", self._on_tree_right_click)
+
+
+    
 
     def toggle_fullscreen(self, event=None):
         self.attributes("-fullscreen", not self.attributes("-fullscreen"))
@@ -603,6 +658,8 @@ class ScanWindow(CTkToplevel):
         # Bind up/down arrow keys for navigation
         self.tree.bind("<Up>", self._on_tree_up_down)
         self.tree.bind("<Down>", self._on_tree_up_down)
+        # Modern: Bind right-click for notes editing
+        self._bind_tree_right_click()
 
         # --- Column Sorting ---
         self._tree_sort_column = None
@@ -704,7 +761,7 @@ class ScanWindow(CTkToplevel):
             except Exception: pass
             self.scan_focus_timer = None
 
-    def scan_focus_schedule_clear(self, delay=1500):
+    def scan_focus_schedule_clear(self, delay=100):
         self.scan_focus_cancel_timer()
         self.scan_focus_timer = self.after(delay, self.scan_focus_clear)
 
@@ -887,7 +944,7 @@ class ScanWindow(CTkToplevel):
         if not context.get("iid"): return
         tag = self.scan_now_tag()
         desc = self.scan_describe_tasks(context.get("missing_tasks", [])) or "task"
-        action_note = f"{tag} Attended with override (missing {desc})."
+        action_note = f"{tag} Attended (Didn't do {desc})."
         base = self.scan_append_notes(context.get("existing_notes", ""), action_note)
         typed = self.scan_collect_new_note()
         final_note = self.scan_append_notes(base, typed)
