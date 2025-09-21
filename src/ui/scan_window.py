@@ -556,9 +556,28 @@ class ScanWindow(CTkToplevel):
         if self.restrictions.get("homework"): cols.append("homework")
         cols += ["attendance", "notes", "timestamp"]
 
+        # Manual column widths
+        column_widths = {
+            "card_id": 90,
+            "student_id": 90,
+            "name": 220,
+            "phone": 130,
+            "exam": 85,
+            "homework": 85,
+            "attendance": 100,
+            "notes": 200,
+            "timestamp": 100,
+        }
+
         self.tree = ttk.Treeview(tree_container, columns=cols, show="headings", selectmode="browse")
         for col in cols:
-            self.tree.heading(col, text=col.replace("_", " ").title()); self.tree.column(col, anchor="center", width=110)
+            width = column_widths.get(col, 110)
+            self.tree.heading(col, text=col.replace("_", " ").title())
+            if col == "notes":
+                # Stretch notes column to fill remaining space and left-align text
+                self.tree.column(col, anchor="w", width=width, stretch=True)
+            else:
+                self.tree.column(col, anchor="center", width=width, stretch=False)
         self.tree.grid(row=0, column=0, sticky="nsew")
 
         scrollbar = ttk.Scrollbar(tree_container, orient="vertical", command=self.tree.yview)
