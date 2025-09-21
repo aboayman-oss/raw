@@ -108,12 +108,8 @@ class ScanWindow(CTkToplevel):
         # --- Icon Cache ---
         self._icon_cache = {}
 
-        # Load background image
-        self.original_bg = Image.open(HOME_BG_FILE)
-        self.bg_photo = ctk.CTkImage(light_image=self.original_bg, dark_image=self.original_bg, size=self.original_bg.size)
-        self.bg_label = CTkLabel(self, text="", image=self.bg_photo)
-        self.bg_label.place(relwidth=1, relheight=1)
-        self.bind("<Configure>", self._on_bg_resize)
+        # Remove background image; use solid surface panel for contrast
+        self.bg_label = None  # No background image
 
         self.title("Scan Attendance")
         self.protocol("WM_DELETE_WINDOW", self._on_end_scan)
@@ -371,10 +367,7 @@ class ScanWindow(CTkToplevel):
     # --------------------------------------------------------------------------
 
     def _on_bg_resize(self, event):
-        if event.widget is self:
-            bg = self.original_bg.resize((event.width, event.height), Image.Resampling.LANCZOS)
-            self.bg_photo = ctk.CTkImage(light_image=bg, dark_image=bg, size=(event.width, event.height))
-            self.bg_label.configure(image=self.bg_photo)
+        pass  # No background image to resize
 
     def _focus_scan_entry(self):
         self._focus_reset_job = None
@@ -451,7 +444,7 @@ class ScanWindow(CTkToplevel):
         self._build_stats_strip()
 
         # --- Main content area ---
-        scan_main_content = CTkFrame(self, fg_color="transparent")
+        scan_main_content = CTkFrame(self, fg_color=(LIGHT_SURFACE, DARK_SURFACE), corner_radius=18)
         scan_main_content.pack(fill="both", expand=True, padx=24, pady=(0, 24))
         scan_main_content.grid_rowconfigure(0, weight=1); scan_main_content.grid_columnconfigure(0, weight=1)
 
