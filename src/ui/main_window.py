@@ -324,8 +324,7 @@ class App(CTk):
         try:
             if sys.platform.startswith("win"):
                 target = os.path.normpath(path_entry)
-                explorer_cmd = f'/select,\"{target}\"'
-                subprocess.Popen(["explorer", explorer_cmd])
+                subprocess.Popen(['explorer', '/select,', target])
             elif sys.platform == "darwin":
                 subprocess.Popen(["open", "-R", path_entry])
             else:
