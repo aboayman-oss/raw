@@ -193,6 +193,14 @@ class ScanWindow(CTkToplevel):
         y = by - self.winfo_rooty()
         panel.place(x=x, y=y)
 
+        # Top bar with X button
+        top_bar = CTkFrame(panel, fg_color="transparent")
+        top_bar.pack(fill="x", padx=0, pady=(0,0))
+        CTkLabel(top_bar, text="Filters", font=("Arial", 14, "bold"), anchor="w").pack(side="left", padx=(12,0), pady=(10,0))
+        x_icon = self._load_icon("error.png", size=(20, 20))
+        dismiss_btn = CTkButton(top_bar, text="", image=x_icon, width=32, height=32, fg_color="transparent", command=self._hide_filter_panel)
+        dismiss_btn.pack(side="right", padx=(0,8), pady=(10,0))
+
         # Attendance Status (Radio)
         CTkLabel(panel, text="Attendance Status", font=("Arial", 12, "bold"), anchor="w").pack(anchor="w", padx=12, pady=(10,0))
         att_frame = CTkFrame(panel, fg_color="transparent")
@@ -218,21 +226,15 @@ class ScanWindow(CTkToplevel):
         clear_btn = CTkButton(panel, text="Clear Filters", fg_color=("#e3eafc", "#232a36"), command=self._clear_filters)
         clear_btn.pack(fill="x", padx=12, pady=(10,10))
 
-        # Dismiss on click-away
-        self.bind_all("<Button-1>", self._on_click_away, add="+")
         self._filter_panel.lift()
 
     def _hide_filter_panel(self):
         if self._filter_panel and self._filter_panel.winfo_exists():
             self._filter_panel.place_forget()
             self._filter_panel.destroy()
-        self.unbind_all("<Button-1>")
 
     def _on_click_away(self, event):
-        # Only close if click is outside panel and filter button
-        widget = event.widget
-        if widget not in {self._filter_panel, self.filter_button}:
-            self._hide_filter_panel()
+        pass  # Removed click-away dismissal for filter panel
 
     def _on_filter_change(self):
         self._filter_active = self._is_filter_active()
@@ -546,18 +548,7 @@ class ScanWindow(CTkToplevel):
         filter_icon = self._load_icon("filter.png", size=(28, 28))
         self.filter_button = CTkButton(search_filter_frame, width=44, height=44, text="", image=filter_icon, fg_color=("#e3eafc", "#232a36"), corner_radius=22, command=self._on_filter_click)
         self.filter_button.pack(side="left", padx=(8, 0))
-        reset_icon = self._load_icon("reset.png", size=(28, 28))
-        self.reset_sort_button = CTkButton(
-            search_filter_frame,
-            text="Reset Sort",
-            image=reset_icon,
-            width=120,
-            height=44,
-            fg_color=("#e3eafc", "#232a36"),
-            corner_radius=22,
-            command=self._reset_treeview_sort
-        )
-        self.reset_sort_button.pack(side="left", padx=(8, 0))
+            # Removed Reset Sort Button (icon-only, next to filter)
 
         # --- Actions (Far Right) ---
         actions_frame = CTkFrame(top_bar, fg_color="transparent")
@@ -619,19 +610,7 @@ class ScanWindow(CTkToplevel):
         for col in cols:
             self.tree.heading(col, command=lambda c=col: self._on_treeview_sort(c))
 
-        # --- Reset Sort Button (icon-only, next to filter) ---
-        reset_icon = self._load_icon("reset.png", size=(28, 28))
-        self.reset_sort_button = CTkButton(
-            search_filter_frame,
-            text="",
-            image=reset_icon,
-            width=44,
-            height=44,
-            fg_color=("#e3eafc", "#232a36"),
-            corner_radius=22,
-            command=self._reset_treeview_sort
-        )
-        self.reset_sort_button.pack(side="left", padx=(8, 0))
+            # Removed Reset Sort Button (icon-only, next to filter)
 
     def _on_treeview_sort(self, col):
         # Get all items and their values for the column
