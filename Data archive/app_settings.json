@@ -15,7 +15,7 @@
     "15 May"
   ],
   "restrictions": {
-    "exam": true,
+    "exam": false,
     "homework": true
   },
   "file_type": "xlsx"
