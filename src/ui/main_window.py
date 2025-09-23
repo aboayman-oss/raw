@@ -481,7 +481,7 @@ class App(CTk):
         dialog = PasswordDialog(self)
         password = dialog.get_input()
 
-        if password == "admin":
+        if password == "gawish1":
             if self.settings_window is not None and self.settings_window.winfo_exists():
                 bring_window_to_front(self.settings_window)
                 return
