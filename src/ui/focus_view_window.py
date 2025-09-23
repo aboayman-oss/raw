@@ -87,8 +87,22 @@ class FocusViewWindow:
         self.btn_cancel = CTkButton(actions_zone, text="Cancel Attendance", image=self._load_icon("block.png"), command=self._on_cancel)
 
         self.buttons = [self.btn_complete, self.btn_add_student, self.btn_override, self.btn_deny, self.btn_cancel]
+        # 1. Configure a 3-column grid with equal weight
+        actions_zone.grid_columnconfigure((0, 1, 2), weight=1)
+
+        # 2. Place each button in its specific grid layout cell
+        #    These will be hidden/shown by the logic in scan_window.py
+        self.btn_deny.grid(row=0, column=0, sticky="ew", padx=2)
+        self.btn_override.grid(row=0, column=1, sticky="ew", padx=2)
+        self.btn_complete.grid(row=0, column=2, sticky="ew", padx=2)
+        self.btn_add_student.grid(row=0, column=0, columnspan=3, sticky="ew", padx=4)
+        self.btn_cancel.grid(row=0, column=0, columnspan=3, sticky="ew", padx=4)
+
+        # 3. Hide them all initially
         for btn in self.buttons:
-            btn.pack(side="left", padx=5)
+            btn.grid_remove()
+
+
         if self.read_only:
             self.notes.configure(state="disabled")
             for btn in self.buttons:

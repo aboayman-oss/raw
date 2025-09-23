@@ -465,29 +465,30 @@ class ScanWindow(CTkToplevel):
         self._update_action_buttons(kind, context)
 
     def _update_action_buttons(self, kind, context):
-        """Shows and hides the correct action buttons based on the status."""
+        """Shows and hides the correct action buttons using a stable grid layout."""
+        # Hide all buttons first
         for btn in self.focus_view.buttons:
-            btn.pack_forget()
+            btn.grid_remove()
 
-        buttons_to_show = []
+        # Determine which buttons to show and place them in the grid
         if kind == "not_found":
-            buttons_to_show = [self.focus_view.btn_add_student]
+            # CHANGED: Place the single button in the center column (1)
+            # This leaves columns 0 and 2 as empty spacers, maintaining width.
+            self.focus_view.btn_add_student.grid(row=0, column=1, sticky="ew", padx=2)
+
         elif kind in {"missing_exam", "missing_homework"}:
-            buttons_to_show = [self.focus_view.btn_deny, self.focus_view.btn_override, self.focus_view.btn_complete]
+            # UNCHANGED: This layout already uses all three columns correctly.
+            self.focus_view.btn_deny.grid(row=0, column=0, sticky="ew", padx=2)
+            self.focus_view.btn_override.grid(row=0, column=1, sticky="ew", padx=2)
+            self.focus_view.btn_complete.grid(row=0, column=2, sticky="ew", padx=2)
+
         elif context.get("already_attended"):
-            # If already attended, only show the cancel button
-            buttons_to_show = [self.focus_view.btn_cancel]
+            # CHANGED: Place the single button in the center column (1)
+            self.focus_view.btn_cancel.grid(row=0, column=1, sticky="ew", padx=2)
+
         elif kind == "ok":
-            # For a normal 'ok' status, no buttons are needed as it's auto-completed
+            # No buttons are needed, the grid remains empty but holds its space
             pass
-
-        # Pack buttons with primary actions last to appear on the right
-        for btn in buttons_to_show:
-            btn.pack(side="left", fill="x", expand=True, padx=4)
-
-        # Special case for a single primary button to be centered
-        if len(buttons_to_show) == 1:
-            buttons_to_show[0].pack(side="top", fill="x", expand=True, padx=4)
 
     def scan_focus_clear(self):
         """Hides the Focus View and resets its state."""
