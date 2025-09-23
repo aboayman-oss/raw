@@ -49,19 +49,6 @@ DARK_ERROR = "#f2b8b5"
 DARK_INFO = "#a9c8e7"
 DARK_OUTLINE = "#8e9099"
 LIGHT_INFO = "#00639c"
-LIGHT_OUTLINE = "#73777f"
-
-# Dark Mode
-DARK_BG = "#1d1b20"
-DARK_SURFACE = "#141218"
-DARK_PRIMARY_TEXT = "#e3e2e6"
-DARK_SECONDARY_TEXT = "#cac4d0"
-DARK_SUCCESS = "#b5d3a7"
-DARK_WARNING = "#f9d694"
-DARK_ERROR = "#f2b8b5"
-DARK_INFO = "#a9c8e7"
-DARK_OUTLINE = "#8e9099"
-
 # -- Status Definitions --
 STATUS_STYLES = {
     "ok": {
@@ -155,7 +142,7 @@ class ScanWindow(CTkToplevel):
         self.scan_focus_ctx = None
         self.scan_focus_visible_cache = []
         self.scan_focus_timer = None
-        self.scan_focus_window = None
+        self.focus_view_container = None # For integrated view
         self.stats_vars = {
             "total": ctk.StringVar(value="0"),
             "attended": ctk.StringVar(value="0"),
@@ -379,34 +366,13 @@ class ScanWindow(CTkToplevel):
             self.focus_view.notes.configure(text_color="gray")
             self.focus_view.notes.insert("1.0", "Add notes here...")
 
-    def _ensure_scan_focus_window(self):
-        """Ensures the Focus View window exists, creating it if necessary."""
-        window = getattr(self, "scan_focus_window", None)
-        if window is not None and window.winfo_exists():
-            return window
-        
-        window = CTkToplevel(self)
-        window.withdraw()
-        window.title("Focus View")
-        window.geometry("550x640")
-        window.minsize(550, 600)
-        window.transient(self)
-        window.attributes("-topmost", True)
-        window.protocol("WM_DELETE_WINDOW", self.scan_focus_clear)
-        window.bind("<Destroy>", lambda e: setattr(self, "scan_focus_window", None), add="+")
-
-        self.scan_focus_window = window
-        self.scan_focus_create_ui(window)
-        return window
-
     def scan_focus_show(self, scan_ctx):
         """Shows and populates the Focus View with student data."""
         self.scan_focus_cancel_timer()
-        window = self._ensure_scan_focus_window()
-        if not window: return
+        if not self.focus_view_container: return
 
-        window.deiconify()
-        bring_window_to_front(window)
+        # Show the integrated focus view panel
+        self.focus_view_container.grid()
         
         ctx = dict(scan_ctx or {})
         ctx.setdefault("original_notes", ctx.get("existing_notes", ""))
@@ -536,8 +502,8 @@ class ScanWindow(CTkToplevel):
 
         self.scan_restore_from_focus()
         
-        window = getattr(self, "scan_focus_window", None)
-        if window and window.winfo_exists(): window.withdraw()
+        if self.focus_view_container:
+            self.focus_view_container.grid_remove()
             
         self.after(120, self.scan_entry.focus_set)
 
@@ -566,7 +532,7 @@ class ScanWindow(CTkToplevel):
 
 
     def _build_ui(self):
-        # --- Material 3 Inspired Header ---
+        # --- Header Bar ---
         top_bar = CTkFrame(self, fg_color=("#f8faff", "#1d1b20"), corner_radius=16)
         top_bar.pack(fill="x", padx=24, pady=(24, 16))
         top_bar.grid_columnconfigure(0, weight=0)
@@ -574,7 +540,7 @@ class ScanWindow(CTkToplevel):
         top_bar.grid_columnconfigure(2, weight=0)
         top_bar.grid_columnconfigure(3, weight=0)
 
-        # --- Scan Entry (Left) ---
+        # --- Scan Entry ---
         scan_icon = self._load_icon("scan.png", size=(28, 28))
         scan_entry_frame = CTkFrame(top_bar, fg_color="transparent")
         scan_entry_frame.grid(row=0, column=0, sticky="w", padx=(0, 12))
@@ -586,14 +552,14 @@ class ScanWindow(CTkToplevel):
         self.pb = CTkProgressBar(scan_entry_frame, mode="indeterminate", width=260)
         self.pb.pack_forget()
 
-        # --- Add Student Button (Circular, Icon Only) ---
+        # --- Add Student Button ---
         add_icon = self._load_icon("person_add.png", size=(32, 32))
         self.add_student_button = CTkButton(top_bar, width=44, height=44, text="", image=add_icon, fg_color=("#e3eafc", "#232a36"), corner_radius=22, command=self._on_add_student_flow)
         self.add_student_button.grid(row=0, column=1, sticky="w", padx=(0, 12))
         if self.read_only:
             self.scan_entry.configure(state="disabled"); self.scan_entry.unbind("<Return>"); self.add_student_button.grid_remove()
 
-        # --- Search & Filter (Center/Right) ---
+        # --- Search & Filter ---
         search_filter_frame = CTkFrame(top_bar, fg_color="transparent")
         search_filter_frame.grid(row=0, column=2, sticky="ew", padx=(0, 12))
         self.search_var = ctk.StringVar()
@@ -612,9 +578,8 @@ class ScanWindow(CTkToplevel):
         filter_icon = self._load_icon("filter.png", size=(28, 28))
         self.filter_button = CTkButton(search_filter_frame, width=44, height=44, text="", image=filter_icon, fg_color=("#e3eafc", "#232a36"), corner_radius=22, command=self._on_filter_click)
         self.filter_button.pack(side="left", padx=(8, 0))
-            # Removed Reset Sort Button (icon-only, next to filter)
 
-        # --- Actions (Far Right) ---
+        # --- Actions ---
         actions_frame = CTkFrame(top_bar, fg_color="transparent")
         actions_frame.grid(row=0, column=3, sticky="e", padx=(0, 0))
         self.end_button = CTkButton(actions_frame, text="End Session" if not self.read_only else "Close", command=self._on_end_scan, width=120, height=44, fg_color=("#00639c", "#a9c8e7"), text_color=("#fff", "#232a36"), font=("Arial", 14, "bold"))
@@ -623,14 +588,24 @@ class ScanWindow(CTkToplevel):
         # --- Stats strip ---
         self._build_stats_strip()
 
-        # --- Main content area ---
-        scan_main_content = CTkFrame(self, fg_color=(LIGHT_SURFACE, DARK_SURFACE), corner_radius=18)
-        scan_main_content.pack(fill="both", expand=True, padx=24, pady=(0, 24))
-        scan_main_content.grid_rowconfigure(0, weight=1); scan_main_content.grid_columnconfigure(0, weight=1)
+        # --- Main content area with integrated Focus View ---
+        main_body = CTkFrame(self, fg_color="transparent")
+        main_body.pack(fill="both", expand=True, padx=24, pady=(0, 24))
+        main_body.grid_rowconfigure(0, weight=1)
+        main_body.grid_columnconfigure(0, weight=1)
+        main_body.grid_columnconfigure(1, weight=0) # Focus view column, initially no weight
 
-        tree_container = CTkFrame(scan_main_content, fg_color="transparent")
-        tree_container.grid(row=0, column=0, sticky="nsew"); tree_container.grid_rowconfigure(0, weight=1); tree_container.grid_columnconfigure(0, weight=1)
+        # --- Treeview Container (Left/Main) ---
+        tree_outer_container = CTkFrame(main_body, fg_color=(LIGHT_SURFACE, DARK_SURFACE), corner_radius=18)
+        tree_outer_container.grid(row=0, column=0, sticky="nsew")
+        tree_outer_container.grid_rowconfigure(0, weight=1)
+        tree_outer_container.grid_columnconfigure(0, weight=1)
 
+        tree_container = CTkFrame(tree_outer_container, fg_color="transparent")
+        tree_container.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        tree_container.grid_rowconfigure(0, weight=1)
+        tree_container.grid_columnconfigure(0, weight=1)
+        
         cols = ["card_id", "student_id", "name", "phone"]
         if self.restrictions.get("exam"): cols.append("exam")
         if self.restrictions.get("homework"): cols.append("homework")
@@ -665,6 +640,7 @@ class ScanWindow(CTkToplevel):
         self.tree.bind("<Double-1>", self.scan_on_row_double_click)
         if self.read_only: self.tree.unbind("<Double-1>")
         # Bind up/down arrow keys for navigation
+        self.tree.bind("<Return>", self._on_tree_enter)
         self.tree.bind("<Up>", self._on_tree_up_down)
         self.tree.bind("<Down>", self._on_tree_up_down)
         # Modern: Bind right-click for notes editing
@@ -676,7 +652,15 @@ class ScanWindow(CTkToplevel):
         for col in cols:
             self.tree.heading(col, command=lambda c=col: self._on_treeview_sort(c))
 
-            # Removed Reset Sort Button (icon-only, next to filter)
+        # --- Focus View Container (Right, initially hidden) ---
+        self.focus_view_container = CTkFrame(main_body, fg_color=(LIGHT_SURFACE, DARK_SURFACE), corner_radius=18, width=400)
+        self.focus_view_container.grid(row=0, column=1, sticky="ns", padx=(12, 0))
+        self.focus_view_container.grid_propagate(False) # Prevent resizing
+        self.scan_focus_create_ui(self.focus_view_container)
+        self.focus_view_container.grid_remove() # Hide it initially
+
+        # Configure column weights for resizing
+        main_body.grid_columnconfigure(1, weight=0) # Focus view column
 
     def _on_treeview_sort(self, col):
         # Get all items and their values for the column
@@ -729,11 +713,7 @@ class ScanWindow(CTkToplevel):
         # Simulate double-click on selected row when Enter is pressed
         selected = self.tree.selection()
         if selected:
-            # Create a dummy event with y set to 0 (not used)
-            class DummyEvent:
-                def __init__(self, y):
-                    self.y = y
-            self.scan_on_row_double_click(DummyEvent(0))
+            self.scan_on_open_row(selected[0], source="manual")
 
         # Bind up/down arrow keys for navigation
         self.tree.bind("<Up>", self._on_tree_up_down)
@@ -940,7 +920,7 @@ class ScanWindow(CTkToplevel):
 
     def scan_commit_attendance(self, iid, attendance, notes, *, timestamp=None, warn_on_duplicate=False):
         try: return bool(self._set_attendance(iid, attendance, notes, warn_on_duplicate=warn_on_duplicate, timestamp_override=timestamp))
-        except Exception as exc: messagebox.showwarning("Attendance Update Failed", str(exc), parent=self); return False
+        except Exception as exc: messagebox.showwarning("Attendance Update Failed", str(exc), parent=self); return False # type: ignore
 
     def scan_focus_on_completed(self):
         context = self.scan_focus_ctx or {}
@@ -1111,17 +1091,20 @@ class ScanWindow(CTkToplevel):
         if "missing_exam" in metrics: self.stats_vars["missing_exam"].set(f"{metrics['missing_exam']}")
         if "missing_hw" in metrics: self.stats_vars["missing_hw"].set(f"{metrics['missing_hw']}")
 
+    def _safe_destroy(self, widget):
+        """Safely destroys a widget if it exists."""
+        if widget and hasattr(widget, "winfo_exists") and widget.winfo_exists():
+            try:
+                widget.destroy()
+            except Exception:
+                pass
+
     def _finalize_and_close(self, status_message=None):
         if status_message is None: status_message = f"Session '{self.sm.name}' saved and closed."
         summary, session_name, session_path, parent, read_only = self._build_summary_payload(), self.sm.name, getattr(self.sm, "session_path", None), self.parent, getattr(self, "read_only", False)
         
-        window = getattr(self, "scan_focus_window", None)
-        if window is not None and hasattr(window, "winfo_exists") and window.winfo_exists():
-            try: window.destroy()
-            except Exception: pass
-        if hasattr(self, "winfo_exists") and self.winfo_exists():
-            try: self.destroy()
-            except Exception: pass
+        # Safely destroy the main scan window
+        self._safe_destroy(self)
         
         if hasattr(parent, "_refresh_recent_sessions"): parent._refresh_recent_sessions()
         if getattr(parent, "past_sessions_window", None) and parent.past_sessions_window.winfo_exists(): parent.past_sessions_window.refresh()
@@ -1173,16 +1156,17 @@ class ScanWindow(CTkToplevel):
     def _set_attendance(self, code, attendance, notes, *, warn_on_duplicate=True, timestamp_override=None):
         if self.read_only or not self.tree.exists(code): return False
         target_attendance = self._clean_value(attendance)
-        if warn_on_duplicate and target_attendance.lower() == "attend" and self.scan_tree_get(code, "attendance").lower() == "attend":
-            messagebox.showwarning("Already Attended", "This student is already attended.", parent=self)
-            return False
+        # The check for duplicate attendance is now handled in scan_on_open_row
+        # if warn_on_duplicate and target_attendance.lower() == "attend" and self.scan_tree_get(code, "attendance").lower() == "attend":
+        #     messagebox.showwarning("Already Attended", "This student is already attended.", parent=self)
+        #     return False
         
         timestamp = timestamp_override or datetime.now().strftime("%d/%m/%Y, %H:%M:%S")
         rec = self._build_record_payload(code, target_attendance, self._clean_value(notes), timestamp)
         
         try: self.sm.add_record(rec)
-        except Exception as exc: messagebox.showwarning("Attendance Update Failed", str(exc), parent=self); return False
-        
+        except Exception as exc: messagebox.showwarning("Attendance Update Failed", str(exc), parent=self); return False # type: ignore
+
         self._update_row(code, target_attendance, notes, timestamp)
         self._refresh_stats()
         return True
@@ -1258,7 +1242,7 @@ class ScanWindow(CTkToplevel):
         widget = self.focus_get()
         if widget is None or widget.winfo_toplevel() is not self: return
         if widget in {self.scan_entry, *self._search_entries}: return
-        
+
         parent = getattr(widget, "master", None)
         while parent is not None:
             if parent == getattr(self, "scan_focus_window", None): return
