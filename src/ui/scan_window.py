@@ -69,6 +69,11 @@ STATUS_STYLES = {
         "icon": "check_circle.png",
         "color": (LIGHT_SUCCESS, DARK_SUCCESS),
     },
+    "already_attended": { # New status for duplicate attendance
+        "text": "Already Attended",
+        "icon": "gpp_good.png", # Using a verified-style icon
+        "color": (LIGHT_INFO, DARK_INFO),
+    },
     "missing_exam": {
         "text": "Tasks Missing",
         "icon": "warning.png",
@@ -503,8 +508,12 @@ class ScanWindow(CTkToplevel):
             buttons_to_show = [self.focus_view.btn_add_student]
         elif kind in {"missing_exam", "missing_homework"}:
             buttons_to_show = [self.focus_view.btn_deny, self.focus_view.btn_override, self.focus_view.btn_complete]
-        elif kind == "ok" and context.get("already_attended"):
+        elif context.get("already_attended"):
+            # If already attended, only show the cancel button
             buttons_to_show = [self.focus_view.btn_cancel]
+        elif kind == "ok":
+            # For a normal 'ok' status, no buttons are needed as it's auto-completed
+            pass
 
         # Pack buttons with primary actions last to appear on the right
         for btn in buttons_to_show:
@@ -846,6 +855,7 @@ class ScanWindow(CTkToplevel):
     def scan_determine_status(self, scan_ctx):
         if scan_ctx.get("status") in {"not_found", "duplicate"}: return scan_ctx["status"]
         if not scan_ctx.get("found", True): return "not_found"
+        if scan_ctx.get("already_attended"): return "already_attended"
         missing = scan_ctx.get("missing_tasks", [])
         if missing: return "missing_exam" if "exam" in missing else "missing_homework"
         return "ok"
@@ -908,6 +918,11 @@ class ScanWindow(CTkToplevel):
         
         context = self.scan_build_context_for_iid(iid, source=source)
         if card_id: context["card_id"] = context["card_display"] = card_id
+        
+        # --- Prevent duplicate attendance ---
+        if context.get("already_attended"):
+            self.scan_focus_show(context) # Show the focus window with the duplicate status
+            return
         
         self.scan_focus_show(context)
         
