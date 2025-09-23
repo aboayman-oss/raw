@@ -23,6 +23,38 @@ from utils.helpers import (
 )
 from .focus_view_window import FocusViewWindow
 
+# Located at the top of scan_window.py, after the other imports
+
+# +++ FINAL DEFINITIVE VERSION - REPLACE THE PREVIOUS BLOCK WITH THIS +++
+try:
+    import arabic_reshaper
+    from bidi.algorithm import get_display
+
+    def _process_arabic(text):
+        """A helper that reshapes and reorders Arabic text."""
+        reshaped_text = arabic_reshaper.reshape(text)
+        return get_display(reshaped_text)
+
+except ImportError:
+    print("WARNING: Arabic text support is limited. Please run: pip install arabic_reshaper python-bidi")
+    # If libraries are missing, create a dummy function that does nothing.
+    _process_arabic = lambda text: text
+
+def _format_arabic_text(text):
+    """
+    Correctly formats Arabic text for display in the UI.
+    It checks for Arabic characters before processing.
+    """
+    if not text:
+        return text
+    
+    text_str = str(text)
+    # Only process strings that contain Arabic characters to avoid errors.
+    if not any('\u0600' <= char <= '\u06FF' for char in text_str):
+        return text_str
+    
+    return _process_arabic(text_str)
+
 # --- Constants for the new Focus View Design ---
 ASSETS_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "assets")
 
@@ -383,6 +415,9 @@ class ScanWindow(CTkToplevel):
 
         # Populate UI elements
         self.focus_view.name_label.configure(text=ctx.get("name") or "Unknown Student")
+        student_name = ctx.get("name") or "Unknown Student"
+        formatted_name = _format_arabic_text(student_name)
+        self.focus_view.name_label.configure(text=formatted_name)
         card_display_val = ctx.get('card_display', '') or ''
         card_display = str(card_display_val).replace('null', '').strip() or '--'
         student_id_val = ctx.get('student_id', '') or ''
@@ -1053,7 +1088,13 @@ class ScanWindow(CTkToplevel):
         for _, row in self.df.iterrows():
             cid = pad_card_id(row.get(self.mapping.get("card_id", "card_id"), ""))
             rec = session_records.pop(cid, None)
-            values = [self._clean_value(rec.get(col) if rec and col in rec else row.get(self.mapping.get(col, col), "")) for col in cols]
+            # REPLACEMENT for the line above
+            values = []
+            for col in cols:
+                val = self._clean_value(rec.get(col) if rec and col in rec else row.get(self.mapping.get(col, col), ""))
+                if col == 'name':
+                    val = _format_arabic_text(val)
+                values.append(val)
             self.tree.insert("", "end", iid=cid, values=tuple(values))
             self._all_iids.append(cid)
 
