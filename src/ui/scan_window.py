@@ -138,6 +138,7 @@ class ScanWindow(CTkToplevel):
         self.state('zoomed')
         self.bind("<F11>", self.toggle_fullscreen)
         self.bind("<Escape>", self.toggle_fullscreen)
+        self.bind("<s>", self._on_s_key_press)
         self.restrictions = self.sm.restrictions
         self.df = read_data(self.sm.session_path).fillna("")
         self.mapping = self.sm.mapping or {col: col for col in self.df.columns}
@@ -345,6 +346,15 @@ class ScanWindow(CTkToplevel):
 
     def toggle_fullscreen(self, event=None):
         self.attributes("-fullscreen", not self.attributes("-fullscreen"))
+
+    def _on_s_key_press(self, event):
+        """Handler for 's' key press to focus the scan entry."""
+        # Check if focus is already in a text entry field to avoid interruption
+        focused_widget = self.focus_get()
+        if isinstance(focused_widget, (CTkEntry, CTkTextbox)):
+            return  # Don't steal focus if the user is typing
+        
+        self.scan_entry.focus_set()
 
     # --------------------------------------------------------------------------
     # Redesigned Focus View (Material 3 Style)
@@ -751,34 +761,49 @@ class ScanWindow(CTkToplevel):
         if selected:
             self.scan_on_open_row(selected[0], source="manual")
 
-        # Bind up/down arrow keys for navigation
-        self.tree.bind("<Up>", self._on_tree_up_down)
-        self.tree.bind("<Down>", self._on_tree_up_down)
     def _on_tree_up_down(self, event):
-        # Move selection up or down in the Treeview
-        selected = self.tree.selection()
-        if not selected:
-            # If nothing is selected, select the first item
-            first = self.tree.get_children()
-            if first:
-                self.tree.selection_set(first[0])
-                self.tree.focus(first[0])
-            return
-        current = selected[0]
-        items = list(self.tree.get_children())
-        if current not in items:
-            return
-        idx = items.index(current)
-        if event.keysym == "Up" and idx > 0:
-            new_idx = idx - 1
-        elif event.keysym == "Down" and idx < len(items) - 1:
-            new_idx = idx + 1
-        else:
-            return
-        new_item = items[new_idx]
-        self.tree.selection_set(new_item)
-        self.tree.focus(new_item)
-        self.tree.see(new_item)
+        """Move selection up or down in the Treeview respecting the current visual order."""
+        selected_iid = self.tree.selection()
+
+        # Get only the currently visible children in their visual order.
+        visible_children = self.tree.get_children('')
+        if not visible_children:
+            return "break" # Nothing to navigate
+
+        # If nothing is selected, select the first visible item and stop.
+        if not selected_iid:
+            first_item = visible_children[0]
+            self.tree.selection_set(first_item)
+            self.tree.focus(first_item)
+            self.tree.see(first_item)
+            return "break"
+
+        current_iid = selected_iid[0]
+        try:
+            current_index = visible_children.index(current_iid)
+        except ValueError:
+            # The selected item is not visible, so select the first visible one
+            first_item = visible_children[0]
+            self.tree.selection_set(first_item)
+            self.tree.focus(first_item)
+            self.tree.see(first_item)
+            return "break"
+
+        # Determine the next index
+        if event.keysym == "Up":
+            next_index = current_index - 1
+        else:  # Down
+            next_index = current_index + 1
+            
+        # Select the new item if it's within bounds
+        if 0 <= next_index < len(visible_children):
+            next_item = visible_children[next_index]
+            self.tree.selection_set(next_item)
+            self.tree.focus(next_item)
+            self.tree.see(next_item)
+        
+        # This is crucial: it prevents the default event from firing and causing a "skip".
+        return "break"
 
     def scan_focus_cancel_timer(self):
         if self.scan_focus_timer is not None:
@@ -1277,20 +1302,27 @@ class ScanWindow(CTkToplevel):
         self._finalize_and_close(status_message=msg)
 
     def _global_focus_in(self, _event):
-        if self._focus_reset_job is not None:
-            self.after_cancel(self._focus_reset_job); self._focus_reset_job = None
-        if self.read_only or self._focus_guard_depth > 0: return
-        
-        widget = self.focus_get()
-        if widget is None or widget.winfo_toplevel() is not self: return
-        if widget in {self.scan_entry, *self._search_entries}: return
-
-        parent = getattr(widget, "master", None)
-        while parent is not None:
-            if parent == getattr(self, "scan_focus_window", None): return
-            parent = getattr(parent, "master", None)
-            
-        self._focus_reset_job = self.after_idle(self._focus_scan_entry)
+         if self._focus_reset_job is not None:
+             self.after_cancel(self._focus_reset_job); self._focus_reset_job = None
+         if self.read_only or self._focus_guard_depth > 0: return
+         
+         widget = self.focus_get()
+         if widget is None or widget.winfo_toplevel() is not self: return
+         
+         # FIX 1: Explicitly ignore the Treeview widget itself
+         if widget is self.tree: return
+ 
+         # This check is still valid for the scan and search entries
+         if widget in {self.scan_entry, *self._search_entries}: return
+ 
+         # FIX 2: Check against the correct Focus View container
+         parent = getattr(widget, "master", None)
+         while parent is not None:
+             # Check if the focused widget is a child of the integrated focus view
+             if parent == getattr(self, "focus_view_container", None): return
+             parent = getattr(parent, "master", None)
+             
+         self._focus_reset_job = self.after_idle(self._focus_scan_entry)
 
     def _student_id_or_phone_exists(self, student_id, phone):
         df = read_data(self.sm.session_path)
