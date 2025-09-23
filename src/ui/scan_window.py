@@ -761,7 +761,7 @@ class ScanWindow(CTkToplevel):
             except Exception: pass
             self.scan_focus_timer = None
 
-    def scan_focus_schedule_clear(self, delay=100):
+    def scan_focus_schedule_clear(self, delay=1000):
         self.scan_focus_cancel_timer()
         self.scan_focus_timer = self.after(delay, self.scan_focus_clear)
 

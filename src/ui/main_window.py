@@ -263,7 +263,7 @@ class App(CTk):
                 btn_frame, 
                 text="Open", 
                 width=60,
-                command=lambda p=path_entry: self._open_session_path(p, read_only=True)
+                command=lambda p=path_entry: self._open_session_path(p, read_only=False)
             )
             open_btn.pack(side="right")
 
@@ -413,8 +413,7 @@ class App(CTk):
 
         ctk.CTkButton(action_buttons_frame, text="Refresh", command=self._populate_past_sessions_list).pack(side="left", padx=(0, 10))
 
-        self.clear_all_btn = ctk.CTkButton(action_buttons_frame, text="Clear All", command=self._clear_all_sessions)
-        self.clear_all_btn.pack(side="left")
+    # Removed Clear All button
 
         # Scrollable frame for the list
         self.sessions_list_frame = ctk.CTkScrollableFrame(self.content_frame, label_text="Session Files")
@@ -440,7 +439,7 @@ class App(CTk):
                     files.append((path_entry, stats.st_mtime, stats.st_size))
             files.sort(key=lambda item: item[1], reverse=True)
 
-        self.clear_all_btn.configure(state="normal" if files else "disabled")
+    # Removed Clear All button state configuration
 
         if not files:
             ctk.CTkLabel(self.sessions_list_frame, text="No session files found.").pack(pady=20)
