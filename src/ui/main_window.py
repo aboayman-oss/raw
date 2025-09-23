@@ -13,6 +13,7 @@ from PIL import Image
 from core.session_manager import SessionManager
 from ui.dialogs.session_setup_dialog import SessionSetupDialog
 from ui.dialogs.session_summary_dialog import SessionSummaryDialog
+from ui.dialogs.password_dialog import PasswordDialog
 
 from ui.scan_window import ScanWindow
 from ui.settings_window import SettingsWindow
@@ -477,12 +478,18 @@ class App(CTk):
         self.set_status("Ready.")
 
     def open_settings(self):
-        if self.settings_window is not None and self.settings_window.winfo_exists():
+        dialog = PasswordDialog(self)
+        password = dialog.get_input()
+
+        if password == "admin":
+            if self.settings_window is not None and self.settings_window.winfo_exists():
+                bring_window_to_front(self.settings_window)
+                return
+            self.settings_window = SettingsWindow(self)
             bring_window_to_front(self.settings_window)
-            return
-        self.settings_window = SettingsWindow(self)
-        bring_window_to_front(self.settings_window)
-        self.settings_window.protocol("WM_DELETE_WINDOW", self._on_settings_close)
+            self.settings_window.protocol("WM_DELETE_WINDOW", self._on_settings_close)
+        elif password is not None:
+            messagebox.showerror("Incorrect Password", "The password you entered is incorrect.")
 
     def _on_settings_close(self):
         if self.settings_window is not None:
