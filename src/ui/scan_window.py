@@ -872,11 +872,27 @@ class ScanWindow(CTkToplevel):
     def scan_collect_new_note(self):
         if not hasattr(self, "focus_view"): return ""
         try:
-            typed = self.focus_view.notes.get("1.0", "end-1c").strip()
+            raw_text = self.focus_view.notes.get("1.0", "end-1c")
         except Exception:
             return ""
-        if typed == "Add notes here...": return ""
-        return self._clean_value(typed)
+        if raw_text is None:
+            return ""
+        raw_text = raw_text.replace("\r\n", "\n")
+        candidate = self._clean_value(raw_text)
+        if not candidate or candidate == "Add notes here...":
+            return ""
+        original_clean = ""
+        ctx = getattr(self, "scan_focus_ctx", None)
+        if ctx:
+            original_raw = (ctx.get("original_notes") or "").replace("\r\n", "\n")
+            original_clean = self._clean_value(original_raw)
+        if original_clean:
+            if candidate == original_clean:
+                return ""
+            if candidate.startswith(original_clean):
+                remainder = candidate[len(original_clean):].lstrip()
+                return self._clean_value(remainder)
+        return candidate
 
     def _current_datetime(self):
         return datetime.now()
@@ -1330,3 +1346,5 @@ class ScanWindow(CTkToplevel):
         id_exists = student_id in df[sid_col].astype(str).values if sid_col in df.columns else False
         phone_exists = phone in df[phone_col].astype(str).values if phone_col in df.columns else False
         return id_exists, phone_exists
+
+
