@@ -35,7 +35,7 @@ class FocusViewWindow:
 
     def _setup_ui(self):
         parent = self.parent
-        parent.configure(fg_color=("#F5F5F5", "#222222"))  # Example colors
+        parent.configure(fg_color="#222222")
 
         status_zone = CTkFrame(parent, fg_color="transparent")
         status_zone.pack(fill="x", padx=20, pady=(20, 12))
@@ -111,7 +111,7 @@ class FocusViewWindow:
     def _on_notes_focus_in(self, event):
         if self.notes.get("1.0", "end-1c") == "Add notes here...":
             self.notes.delete("1.0", "end")
-            self.notes.configure(text_color="black")
+            self.notes.configure(text_color="#FFFFFF")
 
     def _on_notes_focus_out(self, event):
         if not self.notes.get("1.0", "end-1c"):

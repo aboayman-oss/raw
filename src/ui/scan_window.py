@@ -58,18 +58,6 @@ def _format_arabic_text(text):
 # --- Constants for the new Focus View Design ---
 ASSETS_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "assets")
 
-# -- Colors --
-# Light Mode
-LIGHT_BG = "#f8faff"
-LIGHT_SURFACE = "#fdfcff"
-LIGHT_PRIMARY_TEXT = "#1b1c1e"
-LIGHT_SECONDARY_TEXT = "#43474e"
-LIGHT_SUCCESS = "#386a20"
-LIGHT_WARNING = "#7e5700"
-LIGHT_ERROR = "#b3261e"
-LIGHT_INFO = "#00639c"
-LIGHT_OUTLINE = "#73777f"
-
 # Dark Mode
 DARK_BG = "#1d1b20"
 DARK_SURFACE = "#141218"
@@ -79,39 +67,38 @@ DARK_SUCCESS = "#b5d3a7"
 DARK_WARNING = "#f9d694"
 DARK_ERROR = "#f2b8b5"
 DARK_INFO = "#a9c8e7"
-DARK_OUTLINE = "#8e9099"
-LIGHT_INFO = "#00639c"
+
 # -- Status Definitions --
 STATUS_STYLES = {
     "ok": {
         "text": "All Clear",
         "icon": "check_circle.png",
-        "color": (LIGHT_SUCCESS, DARK_SUCCESS),
+        "color": DARK_SUCCESS,
     },
     "already_attended": { # New status for duplicate attendance
         "text": "Already Attended",
         "icon": "gpp_good.png", # Using a verified-style icon
-        "color": (LIGHT_INFO, DARK_INFO),
+        "color": DARK_INFO,
     },
     "missing_exam": {
         "text": "Tasks Missing",
         "icon": "warning.png",
-        "color": (LIGHT_WARNING, DARK_WARNING),
+        "color": DARK_WARNING,
     },
     "missing_homework": {
         "text": "Tasks Missing",
         "icon": "warning.png",
-        "color": (LIGHT_WARNING, DARK_WARNING),
+        "color": DARK_WARNING,
     },
     "not_found": {
         "text": "New Student",
         "icon": "person_add.png",
-        "color": (LIGHT_INFO, DARK_INFO),
+        "color": DARK_INFO,
     },
     "duplicate": {
         "text": "Duplicate Card",
         "icon": "error.png",
-        "color": (LIGHT_ERROR, DARK_ERROR),
+        "color": DARK_ERROR,
     },
 }
 
@@ -206,8 +193,8 @@ class ScanWindow(CTkToplevel):
         if self._filter_panel and self._filter_panel.winfo_exists():
             self._filter_panel.lift()
             return
-        panel_width = 320  # Set a fixed width for the panel
-        panel = CTkFrame(self, fg_color=("#fff", "#232a36"), corner_radius=12, width=panel_width)
+        panel_width = 320
+        panel = CTkFrame(self, fg_color="#232a36", corner_radius=12, width=panel_width)
         self._filter_panel = panel
         self.update_idletasks()
         # Center panel horizontally above filter icon
@@ -248,7 +235,7 @@ class ScanWindow(CTkToplevel):
         ctk.CTkCheckBox(other_frame, text="Manually Added (No Card ID)", variable=self._filter_vars["manual_added"], command=self._on_filter_change).pack(side="left", padx=(0,12))
 
         # Clear Filters Button
-        clear_btn = CTkButton(panel, text="Clear Filters", fg_color=("#e3eafc", "#232a36"), command=self._clear_filters)
+        clear_btn = CTkButton(panel, text="Clear Filters", fg_color="#232a36", command=self._clear_filters)
         clear_btn.pack(fill="x", padx=12, pady=(10,10))
 
         self._filter_panel.lift()
@@ -313,7 +300,7 @@ class ScanWindow(CTkToplevel):
         modal.attributes("-topmost", True)
 
         # Modal styling
-        frame = CTkFrame(modal, fg_color=(LIGHT_SURFACE, DARK_SURFACE), corner_radius=16)
+        frame = CTkFrame(modal, fg_color=DARK_SURFACE, corner_radius=16)
         frame.pack(fill="both", expand=True, padx=18, pady=18)
 
         CTkLabel(frame, text=f"Edit Notes for {student_name}", font=("Arial", 15, "bold"), anchor="w").pack(anchor="w", pady=(0,8))
@@ -328,7 +315,7 @@ class ScanWindow(CTkToplevel):
             self._refresh_stats()
             modal.destroy()
 
-        save_btn = CTkButton(frame, text="Save", fg_color=("#00639c", "#a9c8e7"), text_color=("#fff", "#232a36"), font=("Arial", 13, "bold"), command=save_notes, width=120, height=38)
+        save_btn = CTkButton(frame, text="Save", fg_color="#a9c8e7", text_color="#232a36", font=("Arial", 13, "bold"), command=save_notes, width=120, height=38)
         save_btn.pack(side="right", pady=(8,0))
 
         # Focus for quick editing
@@ -400,7 +387,7 @@ class ScanWindow(CTkToplevel):
         self._pause_focus_guard()
         if self.focus_view.notes.get("1.0", "end-1c") == "Add notes here...":
             self.focus_view.notes.delete("1.0", "end")
-            self.focus_view.notes.configure(text_color=(LIGHT_PRIMARY_TEXT, DARK_PRIMARY_TEXT))
+            self.focus_view.notes.configure(text_color=DARK_PRIMARY_TEXT)
 
     def _on_notes_focus_out(self, event):
         self._resume_focus_guard()
@@ -441,7 +428,7 @@ class ScanWindow(CTkToplevel):
         existing_notes = ctx.get("existing_notes", "")
         if existing_notes:
             self.focus_view.notes.insert("1.0", existing_notes)
-            self.focus_view.notes.configure(text_color=(LIGHT_PRIMARY_TEXT, DARK_PRIMARY_TEXT))
+            self.focus_view.notes.configure(text_color=DARK_PRIMARY_TEXT)
         else:
             self.focus_view.notes.configure(text_color="gray")
             self.focus_view.notes.insert("1.0", "Add notes here...")
@@ -475,8 +462,8 @@ class ScanWindow(CTkToplevel):
         problem_icon = self._load_icon("error.png")
 
         # Subtle container colors
-        success_color = ("#e8f5e9", "#1b331d") # Material Green Light/Dark
-        problem_color = ("#fce8e6", "#3c1b1a") # Material Red Light/Dark
+        success_color = "#1b331d" # Material Green Dark
+        problem_color = "#3c1b1a" # Material Red Dark
 
         # Homework
         hw_missing = "homework" in missing_tasks
@@ -579,7 +566,7 @@ class ScanWindow(CTkToplevel):
 
     def _build_ui(self):
         # --- Header Bar ---
-        top_bar = CTkFrame(self, fg_color=("#f8faff", "#1d1b20"), corner_radius=16)
+        top_bar = CTkFrame(self, fg_color="#1d1b20", corner_radius=16)
         top_bar.pack(fill="x", padx=24, pady=(24, 16))
         top_bar.grid_columnconfigure(0, weight=0)
         top_bar.grid_columnconfigure(1, weight=1)
@@ -600,7 +587,7 @@ class ScanWindow(CTkToplevel):
 
         # --- Add Student Button ---
         add_icon = self._load_icon("person_add.png", size=(32, 32))
-        self.add_student_button = CTkButton(top_bar, width=44, height=44, text="", image=add_icon, fg_color=("#e3eafc", "#232a36"), corner_radius=22, command=self._on_add_student_flow)
+        self.add_student_button = CTkButton(top_bar, width=44, height=44, text="", image=add_icon, fg_color="#232a36", corner_radius=22, command=self._on_add_student_flow)
         self.add_student_button.grid(row=0, column=1, sticky="w", padx=(0, 12))
         if self.read_only:
             self.scan_entry.configure(state="disabled"); self.scan_entry.unbind("<Return>"); self.add_student_button.grid_remove()
@@ -622,13 +609,13 @@ class ScanWindow(CTkToplevel):
         search_entry.bind("<FocusOut>", lambda _e: self._resume_focus_guard())
         self.smart_search_entry = search_entry
         filter_icon = self._load_icon("filter.png", size=(28, 28))
-        self.filter_button = CTkButton(search_filter_frame, width=44, height=44, text="", image=filter_icon, fg_color=("#e3eafc", "#232a36"), corner_radius=22, command=self._on_filter_click)
+        self.filter_button = CTkButton(search_filter_frame, width=44, height=44, text="", image=filter_icon, fg_color="#232a36", corner_radius=22, command=self._on_filter_click)
         self.filter_button.pack(side="left", padx=(8, 0))
 
         # --- Actions ---
         actions_frame = CTkFrame(top_bar, fg_color="transparent")
         actions_frame.grid(row=0, column=3, sticky="e", padx=(0, 0))
-        self.end_button = CTkButton(actions_frame, text="End Session" if not self.read_only else "Close", command=self._on_end_scan, width=120, height=44, fg_color=("#00639c", "#a9c8e7"), text_color=("#fff", "#232a36"), font=("Arial", 14, "bold"))
+        self.end_button = CTkButton(actions_frame, text="End Session" if not self.read_only else "Close", command=self._on_end_scan, width=120, height=44, fg_color="#a9c8e7", text_color="#232a36", font=("Arial", 14, "bold"))
         self.end_button.pack(side="right", padx=(0, 0))
 
         # --- Stats strip ---
@@ -642,7 +629,7 @@ class ScanWindow(CTkToplevel):
         main_body.grid_columnconfigure(1, weight=0) # Focus view column, initially no weight
 
         # --- Treeview Container (Left/Main) ---
-        tree_outer_container = CTkFrame(main_body, fg_color=(LIGHT_SURFACE, DARK_SURFACE), corner_radius=18)
+        tree_outer_container = CTkFrame(main_body, fg_color=DARK_SURFACE, corner_radius=18)
         tree_outer_container.grid(row=0, column=0, sticky="nsew")
         tree_outer_container.grid_rowconfigure(0, weight=1)
         tree_outer_container.grid_columnconfigure(0, weight=1)
@@ -699,7 +686,7 @@ class ScanWindow(CTkToplevel):
             self.tree.heading(col, command=lambda c=col: self._on_treeview_sort(c))
 
         # --- Focus View Container (Right, initially hidden) ---
-        self.focus_view_container = CTkFrame(main_body, fg_color=(LIGHT_SURFACE, DARK_SURFACE), corner_radius=18, width=400)
+        self.focus_view_container = CTkFrame(main_body, fg_color=DARK_SURFACE, corner_radius=18, width=400)
         self.focus_view_container.grid(row=0, column=1, sticky="ns", padx=(12, 0))
         self.focus_view_container.grid_propagate(False) # Prevent resizing
         self.scan_focus_create_ui(self.focus_view_container)
@@ -1040,7 +1027,7 @@ class ScanWindow(CTkToplevel):
 
     def _build_stats_strip(self):
         # Compact horizontal stats bar
-        self.stats_frame = CTkFrame(self, fg_color=("#f1f5f9", "#12263a"), corner_radius=12, height=56)
+        self.stats_frame = CTkFrame(self, fg_color="#12263a", corner_radius=12, height=56)
         self.stats_frame.pack(fill="x", padx=24, pady=(0, 8))
 
         card_defs = [
@@ -1057,7 +1044,7 @@ class ScanWindow(CTkToplevel):
         for idx, card in enumerate(card_defs):
             card_frame = CTkFrame(
                 self.stats_frame,
-                fg_color=("#ffffff", "#232a36"),
+                fg_color="#232a36",
                 corner_radius=10,
                 width=110,
                 height=56
@@ -1069,7 +1056,7 @@ class ScanWindow(CTkToplevel):
             card_inner = CTkFrame(card_frame, fg_color="transparent")
             card_inner.pack(expand=True, fill="both")
 
-            CTkLabel(card_inner, text=card["label"], font=("Arial", 12, "bold"), text_color=("#43474e", "#cac4d0"), anchor="center", justify="center").pack(side="top", anchor="center", pady=(6, 0))
+            CTkLabel(card_inner, text=card["label"], font=("Arial", 12, "bold"), text_color="#cac4d0", anchor="center", justify="center").pack(side="top", anchor="center", pady=(6, 0))
 
             icon_num_frame = CTkFrame(card_inner, fg_color="transparent")
             icon_num_frame.pack(side="top", anchor="center", pady=(0, 0), expand=True)
@@ -1086,15 +1073,14 @@ class ScanWindow(CTkToplevel):
                 progress = CTkProgressBar(icon_num_frame, width=40, height=6)
                 progress.set(percent_val)
                 progress.pack(side="left", anchor="center", padx=(0, 4))
-                CTkLabel(icon_num_frame, textvariable=self.stats_vars["percent"], font=("Arial", 18, "bold"), text_color=("#00639c", "#a9c8e7"), anchor="center", justify="center").pack(side="left", anchor="center", padx=(0, 0))
+                CTkLabel(icon_num_frame, textvariable=self.stats_vars["percent"], font=("Arial", 18, "bold"), text_color="#a9c8e7", anchor="center", justify="center").pack(side="left", anchor="center", padx=(0, 0))
             else:
-                CTkLabel(icon_num_frame, textvariable=card["var"], font=("Arial", 20, "bold"), text_color=("#1b1c1e", "#e3e2e6"), anchor="center", justify="center").pack(side="left", anchor="center", padx=(0, 0))
+                CTkLabel(icon_num_frame, textvariable=card["var"], font=("Arial", 20, "bold"), text_color="#e3e2e6", anchor="center", justify="center").pack(side="left", anchor="center", padx=(0, 0))
 
     def _apply_treeview_style(self):
-        mode = ctk.get_appearance_mode()
         style = ttk.Style(self)
         style.theme_use("default")
-        bg, fg, heading_bg, heading_fg = ("#ffffff", "#1a1a1a", "#e1efff", "#1a1a1a") if mode == "Light" else ("#1e1e1e", "#f2f2f2", "#1f6aa5", "#ffffff")
+        bg, fg, heading_bg, heading_fg = ("#1e1e1e", "#f2f2f2", "#1f6aa5", "#ffffff")
         style.configure("Treeview", background=bg, foreground=fg, fieldbackground=bg, rowheight=32, font=("Arial", 11))
         style.map("Treeview", background=[("selected", "#1f6aa5")], foreground=[("selected", "#ffffff")])
         style.configure("Treeview.Heading", background=heading_bg, foreground=heading_fg, font=("Arial", 11, "bold") )

@@ -41,6 +41,11 @@ from utils.helpers import (
 class App(CTk):
     def __init__(self):
         super().__init__()
+
+        # --- FORCE DARK THEME ---
+        ctk.set_appearance_mode("dark")
+        # ------------------------
+
         self.title("RFID Attendance Manager")
         self.column_map = {}
         self.data_df    = None
