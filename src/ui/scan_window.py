@@ -580,7 +580,7 @@ class ScanWindow(CTkToplevel):
         scan_entry_frame.grid(row=0, column=0, sticky="w", padx=(0, 12))
         scan_icon_label = CTkLabel(scan_entry_frame, image=scan_icon, text="", width=32)
         scan_icon_label.pack(side="left", padx=(0, 8))
-        self.scan_entry = CTkEntry(scan_entry_frame, width=260, height=44, placeholder_text="Scan card ID (place card here)")
+        self.scan_entry = CTkEntry(scan_entry_frame, width=260, height=44, placeholder_text="Scan card ID (press 's')", font=("Roboto", 14))
         self.scan_entry.pack(side="left", padx=(0, 0), pady=0)
         self.scan_entry.bind("<Return>", lambda _e: self.scan_on_scan())
         self.pb = CTkProgressBar(scan_entry_frame, mode="indeterminate", width=260)
