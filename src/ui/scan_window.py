@@ -1037,7 +1037,11 @@ class ScanWindow(CTkToplevel):
         context = self.scan_focus_ctx or {}
         card_id = context.get("card_id") or context.get("card_display")
         typed = self.scan_collect_new_note()
-        self._launch_add_student_dialog(card_id=card_id, default_notes=typed)
+        default_notes = typed
+        if not context.get("found", True) or context.get("status") == "not_found":
+            diff_note = "(From diff Group)"
+            default_notes = f"{diff_note} {default_notes}".strip() if default_notes else diff_note
+        self._launch_add_student_dialog(card_id=card_id, default_notes=default_notes or "")
 
     def scan_focus_on_cancel_attendance(self):
         context = self.scan_focus_ctx or {}
@@ -1265,7 +1269,7 @@ class ScanWindow(CTkToplevel):
 
     def _on_add_student_flow(self): self._launch_add_student_dialog()
 
-    def _launch_add_student_dialog(self, card_id=None, default_notes="manual addition"):
+    def _launch_add_student_dialog(self, card_id=None, default_notes="Manually added"):
         if self.read_only: return
         self._pause_focus_guard()
         normalized_card = None
