@@ -380,7 +380,8 @@ class ScanWindow(CTkToplevel):
             on_add_student=self.scan_focus_on_add_student,
             on_override=self.scan_focus_on_override,
             on_deny=self.scan_focus_on_deny,
-            on_cancel=self.scan_focus_on_cancel_attendance
+            on_cancel=self.scan_focus_on_cancel_attendance,
+            on_dismiss=self.scan_focus_clear
         )
 
     def _on_notes_focus_in(self, event):
