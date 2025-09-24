@@ -125,7 +125,7 @@ class ScanWindow(CTkToplevel):
         self.state('zoomed')
         self.bind("<F11>", self.toggle_fullscreen)
         self.bind("<Escape>", self.toggle_fullscreen)
-        self.bind("<s>", self._on_s_key_press)
+        self.bind("<Control-s>", self._on_s_key_press)
         self.restrictions = self.sm.restrictions
         self.df = read_data(self.sm.session_path).fillna("")
         self.mapping = self.sm.mapping or {col: col for col in self.df.columns}
@@ -335,7 +335,7 @@ class ScanWindow(CTkToplevel):
         self.attributes("-fullscreen", not self.attributes("-fullscreen"))
 
     def _on_s_key_press(self, event):
-        """Handler for 's' key press to focus the scan entry."""
+        """Handler for Ctrl+S key press to focus the scan entry."""
         # Check if focus is already in a text entry field to avoid interruption
         focused_widget = self.focus_get()
         if isinstance(focused_widget, (CTkEntry, CTkTextbox)):
@@ -580,7 +580,7 @@ class ScanWindow(CTkToplevel):
         scan_entry_frame.grid(row=0, column=0, sticky="w", padx=(0, 12))
         scan_icon_label = CTkLabel(scan_entry_frame, image=scan_icon, text="", width=32)
         scan_icon_label.pack(side="left", padx=(0, 8))
-        self.scan_entry = CTkEntry(scan_entry_frame, width=260, height=44, placeholder_text="Scan card ID (press 's')", font=("Roboto", 14))
+        self.scan_entry = CTkEntry(scan_entry_frame, width=260, height=44, placeholder_text="Scan card ID (press Ctrl+S)", font=("Roboto", 14))
         self.scan_entry.pack(side="left", padx=(0, 0), pady=0)
         self.scan_entry.bind("<Return>", lambda _e: self.scan_on_scan())
         self.pb = CTkProgressBar(scan_entry_frame, mode="indeterminate", width=260)
