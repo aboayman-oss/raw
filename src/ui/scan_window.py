@@ -878,8 +878,17 @@ class ScanWindow(CTkToplevel):
         if typed == "Add notes here...": return ""
         return self._clean_value(typed)
 
+    def _current_datetime(self):
+        return datetime.now()
+
+    def _format_column_timestamp(self, dt):
+        return dt.strftime("%I:%M:%S %p")
+
+    def _format_note_tag(self, dt):
+        return f"[{dt.strftime('%I:%M:%S %p')}]"
+
     def scan_now_tag(self):
-        return f"[{datetime.now():%H:%M:%S}]"
+        return self._format_note_tag(self._current_datetime())
 
     def scan_determine_status(self, scan_ctx):
         if scan_ctx.get("status") in {"not_found", "duplicate"}: return scan_ctx["status"]
@@ -1210,18 +1219,18 @@ class ScanWindow(CTkToplevel):
     def _set_attendance(self, code, attendance, notes, *, warn_on_duplicate=True, timestamp_override=None):
         if self.read_only or not self.tree.exists(code): return False
         target_attendance = self._clean_value(attendance)
-        # The check for duplicate attendance is now handled in scan_on_open_row
-        # if warn_on_duplicate and target_attendance.lower() == "attend" and self.scan_tree_get(code, "attendance").lower() == "attend":
-        #     messagebox.showwarning("Already Attended", "This student is already attended.", parent=self)
-        #     return False
-        
-        timestamp = timestamp_override or datetime.now().strftime("%d/%m/%Y, %H:%M:%S")
-        rec = self._build_record_payload(code, target_attendance, self._clean_value(notes), timestamp)
-        
-        try: self.sm.add_record(rec)
-        except Exception as exc: messagebox.showwarning("Attendance Update Failed", str(exc), parent=self); return False # type: ignore
-
-        self._update_row(code, target_attendance, notes, timestamp)
+        existing_timestamp = self.scan_tree_get(code, "timestamp")
+        current_dt = self._current_datetime()
+        is_first_attend = target_attendance.lower() == "attend" and not existing_timestamp
+        column_timestamp = self._format_column_timestamp(current_dt) if is_first_attend else existing_timestamp
+        notes_clean = self._clean_value(notes)
+        record_timestamp = self._clean_value(column_timestamp) if column_timestamp else ""
+        rec = self._build_record_payload(code, target_attendance, notes_clean, record_timestamp)
+        try:
+            self.sm.add_record(rec)
+        except Exception as exc:
+            messagebox.showwarning("Attendance Update Failed", str(exc), parent=self); return False # type: ignore
+        self._update_row(code, target_attendance, notes, column_timestamp if is_first_attend else None)
         self._refresh_stats()
         return True
 
@@ -1255,8 +1264,12 @@ class ScanWindow(CTkToplevel):
         cid = str(card_id).strip() if card_id else self._next_unknown_card_id()
         if cid.isdigit(): cid = cid.zfill(8)
         
-        timestamp = self.scan_now_tag()
-        rec = {"card_id": cid, "attendance": "attend", "timestamp": timestamp, **values, "notes": default_notes}
+        current_dt = self._current_datetime()
+        column_timestamp = self._format_column_timestamp(current_dt)
+        note_tag = self._format_note_tag(current_dt)
+        default_notes_clean = self._clean_value(default_notes)
+        note_text = f"{note_tag} {default_notes_clean}".strip() if default_notes_clean else note_tag
+        rec = {"card_id": cid, "attendance": "attend", "timestamp": column_timestamp, **values, "notes": note_text}
         for task in ["exam", "homework"]:
             if self.restrictions.get(task): rec.setdefault(task, "")
         
