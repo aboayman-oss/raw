@@ -145,7 +145,7 @@ class SessionSummaryDialog(CTkToplevel):
             row = CTkFrame(parent, fg_color="transparent")
             row.pack(fill="x", pady=(0, 4))
             row.grid_columnconfigure(1, weight=1)
-            CTkLabel(row, text=label, font=("Arial", 13), text_color="#a3a3a3").grid(row=0, column=0, sticky="w")
+            CTkLabel(row, text=label, font=("Arial", 14), text_color="#d0d0d0").grid(row=0, column=0, sticky="w")
 
             numeric_value = None
             if value is not None:
@@ -164,7 +164,7 @@ class SessionSummaryDialog(CTkToplevel):
 
         # --- Card 1: Overview ---
         overview_card = CTkFrame(metrics_frame, fg_color="#2b2d30", corner_radius=12, border_width=1, border_color="#3e4046")
-        overview_card.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        overview_card.grid(row=0, column=0, sticky="nsew", padx=(8, 8))
         overview_card.pack_propagate(False)
 
         title_frame_1 = CTkFrame(overview_card, fg_color="transparent", corner_radius=0)
@@ -237,7 +237,7 @@ class SessionSummaryDialog(CTkToplevel):
 
         # --- Card 3: Issues ---
         issues_card = CTkFrame(metrics_frame, fg_color="#2b2d30", corner_radius=12, border_width=1, border_color="#3e4046")
-        issues_card.grid(row=0, column=2, sticky="nsew", padx=(8, 0))
+        issues_card.grid(row=0, column=2, sticky="nsew", padx=(8, 8))
         issues_card.pack_propagate(False)
         title_frame_3 = CTkFrame(issues_card, fg_color="transparent", corner_radius=0)
         title_frame_3.pack(fill="x", side="top")
@@ -280,3 +280,4 @@ class SessionSummaryDialog(CTkToplevel):
             pass
         if self.winfo_exists():
             self.destroy()
+
