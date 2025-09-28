@@ -53,15 +53,36 @@ class SessionSummaryDialog(CTkToplevel):
             row = CTkFrame(parent, fg_color="transparent")
             row.pack(fill="x", pady=(0, 4))
             row.grid_columnconfigure(1, weight=1)
-            CTkLabel(row, text=label, font=("Arial", 14, "bold"), text_color="#111827").grid(row=0, column=0, sticky="w")
-            CTkLabel(row, text=value, font=("Arial", 14, "bold"), text_color="#111827").grid(row=0, column=1, sticky="e")
+            CTkLabel(row, text=label, font=("Arial", 14), text_color="#d0d0d0").grid(row=0, column=0, sticky="w")
+            CTkLabel(row, text=value, font=("Arial", 14, "bold"), text_color="#ffffff").grid(row=0, column=1, sticky="e")
+
+        def create_issue_row(parent, label, value):
+            row = CTkFrame(parent, fg_color="transparent")
+            row.pack(fill="x", pady=(0, 4))
+            row.grid_columnconfigure(1, weight=1)
+            CTkLabel(row, text=label, font=("Arial", 13), text_color="#a3a3a3").grid(row=0, column=0, sticky="w")
+
+            numeric_value = None
+            if value is not None:
+                cleaned_value = str(value).replace(',', '')
+                try:
+                    numeric_value = int(cleaned_value)
+                except (TypeError, ValueError):
+                    numeric_value = None
+
+            is_warning = numeric_value is not None and numeric_value > 0
+            display_value = f"{numeric_value:,}" if numeric_value is not None else ("N/A" if value is None else str(value))
+            value_color = "#ef4444" if is_warning else "#f8fafc"
+
+            CTkLabel(row, text=display_value, font=("Arial", 16, "bold"), text_color=value_color).grid(row=0, column=1, sticky="e")
+
 
         # --- Card 1: Overview ---
-        overview_card = CTkFrame(metrics_frame, fg_color=("#f8fafc", "#ffffff"), corner_radius=12, border_width=1, border_color="#343a46")
+        overview_card = CTkFrame(metrics_frame, fg_color="#2b2d30", corner_radius=12, border_width=1, border_color="#3e4046")
         overview_card.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
         overview_card.pack_propagate(False)
 
-        title_frame_1 = CTkFrame(overview_card, fg_color="#232a36", corner_radius=0)
+        title_frame_1 = CTkFrame(overview_card, fg_color="transparent", corner_radius=0)
         title_frame_1.pack(fill="x", side="top")
         title_frame_1.grid_columnconfigure(1, weight=1) # Make the center column expandable
 
@@ -75,7 +96,7 @@ class SessionSummaryDialog(CTkToplevel):
 
         CTkLabel(title_frame_1, text="Overview", font=("Arial", 16, "bold")).grid(row=0, column=1, pady=8)
         overview_content = CTkFrame(overview_card, fg_color="transparent")
-        overview_content.pack(fill="both", expand=True, padx=12, pady=10)
+        overview_content.pack(fill="both", expand=True, padx=12, pady=(10, 14))
 
         if (total := self.summary.get("total")) is not None:
             create_metric_row(overview_content, "Total students:", f"{total:,}")
@@ -85,10 +106,10 @@ class SessionSummaryDialog(CTkToplevel):
             create_metric_row(overview_content, "Manual additions:", f"{manual:,}")
 
         # --- Card 2: Attendance Rate ---
-        rate_card = CTkFrame(metrics_frame, fg_color=("#f8fafc", "#ffffff"), corner_radius=12, border_width=1, border_color="#343a46")
+        rate_card = CTkFrame(metrics_frame, fg_color="#2b2d30", corner_radius=12, border_width=1, border_color="#3e4046")
         rate_card.grid(row=0, column=1, sticky="nsew", padx=(4, 4))
         rate_card.pack_propagate(False)
-        title_frame_2 = CTkFrame(rate_card, fg_color="#232a36", corner_radius=0)
+        title_frame_2 = CTkFrame(rate_card, fg_color="transparent", corner_radius=0)
         title_frame_2.pack(fill="x", side="top")
         title_frame_2.grid_columnconfigure(1, weight=1) # Make the center column expandable
 
@@ -102,7 +123,7 @@ class SessionSummaryDialog(CTkToplevel):
 
         CTkLabel(title_frame_2, text="Attendance Rate", font=("Arial", 16, "bold")).grid(row=0, column=1, pady=8)
         rate_content = CTkFrame(rate_card, fg_color="transparent")
-        rate_content.pack(fill="both", expand=True, padx=12, pady=10)
+        rate_content.pack(fill="both", expand=True, padx=12, pady=(10, 14))
         if (rate := self.summary.get("attendance_rate")) is not None:
             try:
                 rate_value = float(rate.strip('%'))
@@ -115,16 +136,16 @@ class SessionSummaryDialog(CTkToplevel):
             elif rate_value < 50:
                 text_color = "#ef4444"  # Red
             else:
-                # Use a neutral color that works on the card's light background
-                text_color = "#111827"  # Black/Dark Gray
+                # Use a neutral color that works on the card's dark background
+                text_color = "#d0d0d0"  # Neutral light gray for dark background
 
             CTkLabel(rate_content, text=rate, font=("Arial", 30, "bold"), text_color=text_color).pack(expand=True)
 
         # --- Card 3: Issues ---
-        issues_card = CTkFrame(metrics_frame, fg_color=("#f8fafc", "#ffffff"), corner_radius=12, border_width=1, border_color="#343a46")
+        issues_card = CTkFrame(metrics_frame, fg_color="#2b2d30", corner_radius=12, border_width=1, border_color="#3e4046")
         issues_card.grid(row=0, column=2, sticky="nsew", padx=(8, 0))
         issues_card.pack_propagate(False)
-        title_frame_3 = CTkFrame(issues_card, fg_color="#232a36", corner_radius=0)
+        title_frame_3 = CTkFrame(issues_card, fg_color="transparent", corner_radius=0)
         title_frame_3.pack(fill="x", side="top")
         title_frame_3.grid_columnconfigure(1, weight=1) # Make the center column expandable
 
@@ -138,14 +159,14 @@ class SessionSummaryDialog(CTkToplevel):
 
         CTkLabel(title_frame_3, text="Issues & Flags", font=("Arial", 16, "bold")).grid(row=0, column=1, pady=8)
         issues_content = CTkFrame(issues_card, fg_color="transparent")
-        issues_content.pack(fill="both", expand=True, padx=12, pady=10)
+        issues_content.pack(fill="both", expand=True, padx=12, pady=(10, 14))
 
         if (cancels := self.summary.get("cancellations")) is not None:
-            create_metric_row(issues_content, "Cancellations:", f"{cancels:,}")
+            create_issue_row(issues_content, "Cancellations:", cancels)
         if (missing_exam := self.summary.get("missing_exam")) is not None:
-            create_metric_row(issues_content, "Missing exam:", f"{missing_exam:,}")
+            create_issue_row(issues_content, "Missing exam:", missing_exam)
         if (missing_hw := self.summary.get("missing_hw")) is not None:
-            create_metric_row(issues_content, "Missing homework:", f"{missing_hw:,}")
+            create_issue_row(issues_content, "Missing homework:", missing_hw)
 
         actions = CTkFrame(container, fg_color="transparent")
         actions.grid(row=2, column=0, sticky="ew", pady=(24, 0))
@@ -165,3 +186,4 @@ class SessionSummaryDialog(CTkToplevel):
             pass
         if self.winfo_exists():
             self.destroy()
+
