@@ -25,7 +25,7 @@ class SessionSummaryDialog(CTkToplevel):
         self.grab_set()
         self.after(40, lambda: bring_window_to_front(self))
 
-        container = CTkFrame(self, corner_radius=16, fg_color="#1a1d23")
+        container = CTkFrame(self, corner_radius=16, fg_color="#242424")
         container.pack(fill="both", expand=True, padx=24, pady=24)
         container.grid_columnconfigure(0, weight=1)
 
@@ -151,7 +151,7 @@ class SessionSummaryDialog(CTkToplevel):
         actions.grid(row=2, column=0, sticky="ew", pady=(24, 0))
 
         close_button = CTkButton(actions, text="Close", command=self._on_close)
-        close_button.pack(fill="x", expand=True)
+        close_button.pack(fill="x", expand=True)   
 
         ensure_initial_size(self, min_size=MIN_SUMMARY_SIZE)
         self.protocol("WM_DELETE_WINDOW", self._on_close)

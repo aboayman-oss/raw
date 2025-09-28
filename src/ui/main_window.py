@@ -387,7 +387,7 @@ class App(CTk):
                 "cancellations": cancellations,
             }
 
-            self.show_session_summary(session_name=session_name, summary=summary, session_path=path_entry, read_only=True)
+            self.show_session_summary(session_name=session_name, summary=summary, session_path=path_entry, read_only=False)
             self.set_status(f"Showing summary for '{session_name}'.")
         except Exception as e:
             messagebox.showerror("Summary Error", f"Could not generate summary for the session:\n{e}", parent=self)
