@@ -671,7 +671,7 @@ class ScanWindow(CTkToplevel):
             text_color="#ffffff",
             font=("Arial", 14, "bold"),
             image=logout_icon,
-            compound="left"
+            compound="right"
         )
         self.end_button.pack(side="right", padx=(0, 0))
 
