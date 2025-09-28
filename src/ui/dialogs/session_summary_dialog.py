@@ -3,11 +3,96 @@ import os
 import subprocess
 import sys
 from tkinter import messagebox
-from PIL import Image
+import tkinter as tk
+from PIL import Image, ImageDraw, ImageTk, ImageFont
 
 from customtkinter import CTkButton, CTkFrame, CTkLabel, CTkToplevel, CTkImage
 
 from utils.helpers import MIN_SUMMARY_SIZE, bring_window_to_front, ensure_initial_size, ASSETS_DIR
+
+
+class CircularProgressBar(CTkFrame):
+    def __init__(self, parent, size=100, progress_width=10,
+                 track_width=10, progress_color="#22c55e",
+                 track_color="#3e4046", text_font=("Arial", 24, "bold"),
+                 text_color="#ffffff"):
+        super().__init__(parent, fg_color="transparent")
+
+        self.size = size
+        self.progress_width = progress_width
+        self.track_width = track_width
+        self.progress_color = progress_color
+        self.track_color = track_color
+        self.text_font = text_font
+        self.text_color = text_color
+        self.value = 0
+        self.scale_factor = 4  # MODIFIED: Draw at 4x the resolution
+
+        self.canvas = tk.Canvas(
+            self,
+            width=self.size,
+            height=self.size,
+            bg="#2b2d30",
+            bd=0,
+            highlightthickness=0
+        )
+        self.canvas.pack(expand=True)
+
+        self.photo_image = None
+
+        try:
+            # MODIFIED: Load font at scaled size for high-res drawing
+            scaled_font_size = text_font[1] * self.scale_factor
+            self.font = ImageFont.truetype("arial.ttf", scaled_font_size)
+        except IOError:
+            self.font = ImageFont.load_default()
+
+    def set_value(self, value):
+        self.value = max(0, min(100, value))
+        self._draw_progress()
+
+    def _draw_progress(self):
+        # MODIFIED: Create a larger canvas for supersampling
+        scaled_size = self.size * self.scale_factor
+        image = Image.new("RGBA", (scaled_size, scaled_size), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(image)
+
+        # MODIFIED: All drawing dimensions are scaled up
+        scaled_progress_width = self.progress_width * self.scale_factor
+        scaled_track_width = self.track_width * self.scale_factor
+
+        bbox = [
+            scaled_progress_width / 2,
+            scaled_progress_width / 2,
+            scaled_size - scaled_progress_width / 2,
+            scaled_size - scaled_progress_width / 2,
+        ]
+
+        draw.arc(bbox, start=-90, end=270, fill=self.track_color, width=scaled_track_width)
+
+        if self.value > 0:
+            end_angle = -90 + (self.value / 100) * 360
+            draw.arc(bbox, start=-90, end=end_angle, fill=self.progress_color, width=scaled_progress_width)
+
+        text_str = f"{self.value:.1f}%"
+        text_bbox = draw.textbbox((0, 0), text_str, font=self.font)
+        text_width = text_bbox[2] - text_bbox[0]
+        text_height = text_bbox[3] - text_bbox[1]
+        text_pos = (
+            (scaled_size - text_width) / 2,
+            (scaled_size - text_height) / 2,
+        )
+        draw.text(text_pos, text_str, font=self.font, fill=self.text_color)
+
+        # NEW: Resize the high-resolution image down with a high-quality filter
+        # This is the step that creates the smooth anti-aliasing.
+        image = image.resize((self.size, self.size), Image.Resampling.LANCZOS)
+
+        self.photo_image = ImageTk.PhotoImage(image)
+
+        self.canvas.delete("all")
+        self.canvas.create_image(self.size / 2, self.size / 2, image=self.photo_image)
+
 
 class SessionSummaryDialog(CTkToplevel):
     def __init__(self, parent, *, session_name, summary, session_path, params=None, read_only=False):
@@ -123,23 +208,32 @@ class SessionSummaryDialog(CTkToplevel):
 
         CTkLabel(title_frame_2, text="Attendance Rate", font=("Arial", 16, "bold")).grid(row=0, column=1, pady=8)
         rate_content = CTkFrame(rate_card, fg_color="transparent")
-        rate_content.pack(fill="both", expand=True, padx=12, pady=(10, 14))
+        rate_content.pack(fill="both", expand=True, padx=12, pady=10)
+
         if (rate := self.summary.get("attendance_rate")) is not None:
             try:
-                rate_value = float(rate.strip('%'))
+                rate_value = float(str(rate).strip('%'))
             except (ValueError, TypeError):
                 rate_value = 0.0
 
-            # Determine color based on rate
-            if rate_value > 80:
-                text_color = "#22c55e"  # Green
+            if rate_value >= 80:
+                progress_color = "#22c55e"
             elif rate_value < 50:
-                text_color = "#ef4444"  # Red
+                progress_color = "#ef4444"
             else:
-                # Use a neutral color that works on the card's dark background
-                text_color = "#d0d0d0"  # Neutral light gray for dark background
+                progress_color = "#f59e0b"
 
-            CTkLabel(rate_content, text=rate, font=("Arial", 30, "bold"), text_color=text_color).pack(expand=True)
+            progress_bar = CircularProgressBar(
+                rate_content,
+                size=110,
+                progress_width=10,
+                track_width=8,
+                progress_color=progress_color,
+                track_color="#4b5563",
+                text_font=("Arial", 22, "bold")
+            )
+            progress_bar.pack(expand=True, pady=(5, 0))
+            progress_bar.set_value(rate_value)
 
         # --- Card 3: Issues ---
         issues_card = CTkFrame(metrics_frame, fg_color="#2b2d30", corner_radius=12, border_width=1, border_color="#3e4046")
@@ -172,7 +266,7 @@ class SessionSummaryDialog(CTkToplevel):
         actions.grid(row=2, column=0, sticky="ew", pady=(24, 0))
 
         close_button = CTkButton(actions, text="Close", command=self._on_close)
-        close_button.pack(fill="x", expand=True)   
+        close_button.pack(fill="x", expand=True)
 
         ensure_initial_size(self, min_size=MIN_SUMMARY_SIZE)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -186,4 +280,3 @@ class SessionSummaryDialog(CTkToplevel):
             pass
         if self.winfo_exists():
             self.destroy()
-
