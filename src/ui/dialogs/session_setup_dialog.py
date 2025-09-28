@@ -4,6 +4,7 @@ from customtkinter import CTkButton, CTkComboBox, CTkEntry, CTkFrame, CTkLabel, 
 
 from utils.helpers import MIN_SESSION_SETUP_SIZE, bring_window_to_front, ensure_initial_size
 
+
 class SessionSetupDialog(CTkToplevel):
     def __init__(self, parent, stages, centers, has_data, callback):
         super().__init__(parent)
@@ -17,7 +18,7 @@ class SessionSetupDialog(CTkToplevel):
         self.resizable(False, False)
         self.minsize(*MIN_SESSION_SETUP_SIZE)
         self.transient(parent)
-        self.grid_columnconfigure(1, weight=1)
+        self.grid_columnconfigure(0, weight=1)
 
         notice_text = (
             "Using the imported dataset for this session."
@@ -26,6 +27,16 @@ class SessionSetupDialog(CTkToplevel):
         )
         self.notice_var = ctk.StringVar(value=notice_text)
         self.error_var = ctk.StringVar(value="")
+
+        self.title_font = ctk.CTkFont(size=21, weight="bold")
+        self.body_font = ctk.CTkFont(size=13)
+        self.label_font = ctk.CTkFont(size=12, weight="bold")
+
+        self.field_bg_color = ("#E8EDF6", "#2C3039")
+        self.field_border_color = ("#CBD5E1", "#3D4452")
+        self.field_button_color = ("#D9E2F0", "#3F4656")
+        self.icon_color = ("#4B5563", "#A0AEC0")
+        self.error_color = "#b00020"
 
         self._build_form()
         ensure_initial_size(self, min_size=MIN_SESSION_SETUP_SIZE)
@@ -37,42 +48,121 @@ class SessionSetupDialog(CTkToplevel):
         self.after(100, self._initialize_window)
 
     def _build_form(self):
+        content = CTkFrame(self, fg_color="transparent")
+        content.grid(row=0, column=0, sticky="nsew", padx=24, pady=24)
+        content.grid_columnconfigure(0, weight=1)
+
+        row = 0
         CTkLabel(
-            self,
+            content,
+            text="Start New Session",
+            font=self.title_font,
+            anchor="w",
+        ).grid(row=row, column=0, sticky="ew")
+        row += 1
+        CTkLabel(
+            content,
             textvariable=self.notice_var,
+            font=self.body_font,
             justify="left",
             anchor="w",
-            wraplength=320
-        ).grid(row=0, column=0, columnspan=2, sticky="ew", padx=16, pady=(16, 8))
+            wraplength=360,
+        ).grid(row=row, column=0, sticky="ew", pady=(8, 20))
+        row += 1
 
-        CTkLabel(self, text="Stage:").grid(row=1, column=0, sticky="w", padx=(16, 8), pady=(0, 4))
-        self.stage_cb = CTkComboBox(self, values=self.stages, state="readonly")
-        self.stage_cb.grid(row=1, column=1, sticky="ew", padx=(0, 16), pady=(0, 4))
-
-        CTkLabel(self, text="Center:").grid(row=2, column=0, sticky="w", padx=(16, 8), pady=(0, 4))
-        self.center_cb = CTkComboBox(self, values=self.centers, state="readonly")
-        self.center_cb.grid(row=2, column=1, sticky="ew", padx=(0, 16), pady=(0, 4))
-
-        CTkLabel(self, text="Session No.:").grid(row=3, column=0, sticky="w", padx=(16, 8), pady=(0, 4))
-        self.session_ent = CTkEntry(self)
-        self.session_ent.grid(row=3, column=1, sticky="ew", padx=(0, 16), pady=(0, 4))
+        row = self._add_combo_field(content, row, "Stage", "stage_cb", self.stages)
+        row = self._add_combo_field(content, row, "Center", "center_cb", self.centers)
 
         CTkLabel(
-            self,
+            content,
+            text="Session No.",
+            font=self.label_font,
+            anchor="w",
+        ).grid(row=row, column=0, sticky="w")
+        row += 1
+        session_container = CTkFrame(
+            content,
+            fg_color=self.field_bg_color,
+            corner_radius=16,
+            border_width=1,
+            border_color=self.field_border_color,
+        )
+        session_container.grid(row=row, column=0, sticky="ew", pady=(6, 20))
+        session_container.grid_columnconfigure(1, weight=1)
+
+        CTkLabel(
+            session_container,
+            text="#",
+            font=self.label_font,
+            width=28,
+            anchor="center",
+            text_color=self.icon_color,
+        ).grid(row=0, column=0, padx=(12, 8), pady=10)
+
+        self.session_ent = CTkEntry(
+            session_container,
+            border_width=0,
+            corner_radius=10,
+            fg_color="transparent",
+            font=self.body_font,
+        )
+        self.session_ent.grid(row=0, column=1, sticky="ew", padx=(0, 12), pady=10)
+
+        row += 1
+        CTkLabel(
+            content,
             textvariable=self.error_var,
-            text_color="#b00020",
+            font=self.body_font,
+            text_color=self.error_color,
             justify="left",
             anchor="w",
-            wraplength=320
-        ).grid(row=4, column=0, columnspan=2, sticky="ew", padx=16, pady=(4, 0))
+            wraplength=360,
+        ).grid(row=row, column=0, sticky="ew", pady=(0, 4))
 
-        btn_frame = CTkFrame(self, fg_color="transparent")
-        btn_frame.grid(row=5, column=0, columnspan=2, pady=(12, 16))
-        CTkButton(btn_frame, text="Start Session", command=self._on_submit).pack(side="left", padx=(0, 8))
-        CTkButton(btn_frame, text="Cancel", command=self._on_cancel).pack(side="left")
+        row += 1
+        btn_frame = CTkFrame(content, fg_color="transparent")
+        btn_frame.grid(row=row, column=0, sticky="e", pady=(24, 0))
+        CTkButton(
+            btn_frame,
+            text="Start Session",
+            command=self._on_submit,
+            corner_radius=18,
+        ).pack(side="right")
+        CTkButton(
+            btn_frame,
+            text="Cancel",
+            command=self._on_cancel,
+            fg_color="transparent",
+            hover_color=("#E5E7EB", "#2E2E2E"),
+            text_color=("#4B5563", "#A0AEC0"),
+            border_width=0,
+            corner_radius=18,
+        ).pack(side="right", padx=(0, 12))
 
-        self.stage_cb.set(self.placeholder)
-        self.center_cb.set(self.placeholder)
+    def _add_combo_field(self, parent, start_row, label_text, attr_name, values):
+        CTkLabel(
+            parent,
+            text=label_text,
+            font=self.label_font,
+            anchor="w",
+        ).grid(row=start_row, column=0, sticky="w")
+        combo = CTkComboBox(
+            parent,
+            values=values,
+            state="readonly",
+            font=self.body_font,
+            corner_radius=16,
+            border_width=0,
+            fg_color=self.field_bg_color,
+            button_color=self.field_button_color,
+            button_hover_color=self.field_button_color,
+            dropdown_fg_color=self.field_bg_color,
+            dropdown_hover_color=self.field_button_color,
+        )
+        combo.grid(row=start_row + 1, column=0, sticky="ew", pady=(6, 16))
+        combo.set(self.placeholder)
+        setattr(self, attr_name, combo)
+        return start_row + 2
 
     def _center_on_parent(self):
         self.update_idletasks()
