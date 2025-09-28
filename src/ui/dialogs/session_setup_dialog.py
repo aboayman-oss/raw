@@ -8,8 +8,9 @@ class SessionSetupDialog(CTkToplevel):
     def __init__(self, parent, stages, centers, has_data, callback):
         super().__init__(parent)
         self.parent = parent
-        self.stages = stages
-        self.centers = centers
+        self.placeholder = "-- Select --"
+        self.stages = [self.placeholder] + (stages or [])
+        self.centers = [self.placeholder] + (centers or [])
         self.callback = callback
         self.has_data = has_data
         self.title("Start New Session")
@@ -70,10 +71,8 @@ class SessionSetupDialog(CTkToplevel):
         CTkButton(btn_frame, text="Start Session", command=self._on_submit).pack(side="left", padx=(0, 8))
         CTkButton(btn_frame, text="Cancel", command=self._on_cancel).pack(side="left")
 
-        if self.stages:
-            self.stage_cb.set(self.stages[0])
-        if self.centers:
-            self.center_cb.set(self.centers[0])
+        self.stage_cb.set(self.placeholder)
+        self.center_cb.set(self.placeholder)
 
     def _center_on_parent(self):
         self.update_idletasks()
@@ -98,7 +97,7 @@ class SessionSetupDialog(CTkToplevel):
         stage = self.stage_cb.get().strip()
         center = self.center_cb.get().strip()
         session_no = self.session_ent.get().strip()
-        if not stage or not center or not session_no.isdigit():
+        if stage == self.placeholder or center == self.placeholder or not session_no.isdigit():
             self.error_var.set("Select stage, center, and enter a numeric session number.")
             return
         self.error_var.set("")

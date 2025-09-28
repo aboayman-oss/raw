@@ -139,6 +139,8 @@ class ScanWindow(CTkToplevel):
             "attendance": ctk.StringVar(value="all"),
             "missing_exam": ctk.BooleanVar(value=False),
             "missing_hw": ctk.BooleanVar(value=False),
+            "has_exam": ctk.BooleanVar(value=False),
+            "has_hw": ctk.BooleanVar(value=False),
             "has_notes": ctk.BooleanVar(value=False),
             "manual_added": ctk.BooleanVar(value=False),
         }
@@ -223,9 +225,32 @@ class ScanWindow(CTkToplevel):
         # Task Status (Checkboxes)
         CTkLabel(panel, text="Task Status", font=("Arial", 12, "bold"), anchor="w").pack(anchor="w", padx=12, pady=(6,0))
         task_frame = CTkFrame(panel, fg_color="transparent")
-        task_frame.pack(anchor="w", padx=12, pady=(0,4))
-        ctk.CTkCheckBox(task_frame, text="Missing Exam", variable=self._filter_vars["missing_exam"], command=self._on_filter_change).pack(side="left", padx=(0,12))
-        ctk.CTkCheckBox(task_frame, text="Missing H.W.", variable=self._filter_vars["missing_hw"], command=self._on_filter_change).pack(side="left", padx=(0,12))
+        task_frame.pack(fill="x", padx=12, pady=(0,4))
+        task_frame.grid_columnconfigure((0, 1), weight=1)
+
+        # Exam column
+        exam_col_frame = CTkFrame(task_frame, fg_color="transparent")
+        exam_col_frame.grid(row=0, column=0, sticky="nsew")
+        ctk.CTkCheckBox(
+            exam_col_frame, text="Missing Exam", variable=self._filter_vars["missing_exam"],
+            command=lambda: self._on_task_filter_change("exam", "missing")
+        ).pack(anchor="w", pady=(0, 4))
+        ctk.CTkCheckBox(
+            exam_col_frame, text="Complete Exam", variable=self._filter_vars["has_exam"],
+            command=lambda: self._on_task_filter_change("exam", "has")
+        ).pack(anchor="w")
+
+        # Homework column
+        hw_col_frame = CTkFrame(task_frame, fg_color="transparent")
+        hw_col_frame.grid(row=0, column=1, sticky="nsew")
+        ctk.CTkCheckBox(
+            hw_col_frame, text="Missing H.W.", variable=self._filter_vars["missing_hw"],
+            command=lambda: self._on_task_filter_change("hw", "missing")
+        ).pack(anchor="w", pady=(0, 4))
+        ctk.CTkCheckBox(
+            hw_col_frame, text="Complete H.W", variable=self._filter_vars["has_hw"],
+            command=lambda: self._on_task_filter_change("hw", "has")
+        ).pack(anchor="w")
 
         # Other Criteria (Checkboxes)
         CTkLabel(panel, text="Other Criteria", font=("Arial", 12, "bold"), anchor="w").pack(anchor="w", padx=12, pady=(6,0))
@@ -253,6 +278,22 @@ class ScanWindow(CTkToplevel):
         self._update_filter_icon()
         self._filter_all()
 
+    def _on_task_filter_change(self, task_type, state):
+        """Handles mutually exclusive checkbox logic for tasks."""
+        if task_type == "exam":
+            if state == "missing" and self._filter_vars["missing_exam"].get():
+                self._filter_vars["has_exam"].set(False)
+            elif state == "has" and self._filter_vars["has_exam"].get():
+                self._filter_vars["missing_exam"].set(False)
+        elif task_type == "hw":
+            if state == "missing" and self._filter_vars["missing_hw"].get():
+                self._filter_vars["has_hw"].set(False)
+            elif state == "has" and self._filter_vars["has_hw"].get():
+                self._filter_vars["missing_hw"].set(False)
+
+        # Trigger the main filter update
+        self._filter_all()
+
     def _clear_filters(self):
         for v in self._filter_vars.values():
             if isinstance(v, ctk.StringVar): v.set("all")
@@ -267,6 +308,8 @@ class ScanWindow(CTkToplevel):
         if self._filter_vars["attendance"].get() != "all": return True
         if self._filter_vars["missing_exam"].get(): return True
         if self._filter_vars["missing_hw"].get(): return True
+        if self._filter_vars["has_exam"].get(): return True
+        if self._filter_vars["has_hw"].get(): return True
         if self._filter_vars["has_notes"].get(): return True
         if self._filter_vars["manual_added"].get(): return True
         return False
@@ -616,7 +659,20 @@ class ScanWindow(CTkToplevel):
         # --- Actions ---
         actions_frame = CTkFrame(top_bar, fg_color="transparent")
         actions_frame.grid(row=0, column=3, sticky="e", padx=(0, 0))
-        self.end_button = CTkButton(actions_frame, text="End Session" if not self.read_only else "Close", command=self._on_end_scan, width=120, height=44, fg_color="#a9c8e7", text_color="#232a36", font=("Arial", 14, "bold"))
+        logout_icon = self._load_icon("logout.png", size=(24, 24))
+        self.end_button = CTkButton(
+            actions_frame,
+            text="End Session" if not self.read_only else "Close",
+            command=self._on_end_scan,
+            width=120,
+            height=44,
+            fg_color="#c04040",      # A more prominent red color
+            hover_color="#a03030",   # A darker red for hover
+            text_color="#ffffff",
+            font=("Arial", 14, "bold"),
+            image=logout_icon,
+            compound="left"
+        )
         self.end_button.pack(side="right", padx=(0, 0))
 
         # --- Stats strip ---
@@ -1158,7 +1214,12 @@ class ScanWindow(CTkToplevel):
         attended = sum(1 for iid in self._all_iids if self.tree.exists(iid) and self.scan_tree_get(iid, "attendance").lower() == "attend")
         metrics = {"total": total, "attended": attended, "attendance_rate": f"{(attended / total) * 100:.1f}%" if total else "0%"}
         if self.restrictions.get("exam"): metrics["missing_exam"] = sum(1 for iid in self._all_iids if self.tree.exists(iid) and not self.scan_tree_get(iid, "exam"))
-        if self.restrictions.get("homework"): metrics["missing_hw"] = sum(1 for iid in self._all_iids if self.tree.exists(iid) and not self.scan_tree_get(iid, "homework") )
+        if self.restrictions.get("homework"):
+            missing_hw_count = 0
+            for iid in self._all_iids:
+                if self.tree.exists(iid) and self.scan_tree_get(iid, "homework") in ["", "0"]:
+                    missing_hw_count += 1
+            metrics["missing_hw"] = missing_hw_count
         return metrics
 
     def _build_summary_payload(self):
@@ -1203,6 +1264,8 @@ class ScanWindow(CTkToplevel):
         att = self._filter_vars["attendance"].get()
         missing_exam = self._filter_vars["missing_exam"].get()
         missing_hw = self._filter_vars["missing_hw"].get()
+        has_exam = self._filter_vars["has_exam"].get()
+        has_hw = self._filter_vars["has_hw"].get()
         has_notes = self._filter_vars["has_notes"].get()
         manual_added = self._filter_vars["manual_added"].get()
 
@@ -1224,6 +1287,10 @@ class ScanWindow(CTkToplevel):
             if missing_exam and not self.scan_collect_missing_tasks(iid).count("exam"):
                 show = False
             if missing_hw and not self.scan_collect_missing_tasks(iid).count("homework"):
+                show = False
+            if has_exam and self.scan_collect_missing_tasks(iid).count("exam"):
+                show = False
+            if has_hw and self.scan_collect_missing_tasks(iid).count("homework"):
                 show = False
             # Has notes
             if has_notes and not self.scan_tree_get(iid, "notes"):
@@ -1350,5 +1417,3 @@ class ScanWindow(CTkToplevel):
         id_exists = student_id in df[sid_col].astype(str).values if sid_col in df.columns else False
         phone_exists = phone in df[phone_col].astype(str).values if phone_col in df.columns else False
         return id_exists, phone_exists
-
-

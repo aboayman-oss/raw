@@ -261,7 +261,7 @@ class App(CTk):
                 btn_frame, 
                 text="Show", 
                 width=60,
-                command=lambda p=path_entry: self._reveal_session_path(p)
+                command=lambda p=path_entry: self._show_session_summary_from_path(p)
             )
             reveal_btn.pack(side="right", padx=(5, 10))
 
@@ -292,7 +292,7 @@ class App(CTk):
     def _show_dashboard_view(self):
         self._build_dashboard_view()
 
-    def show_session_summary(self, *, session_name, summary, session_path, read_only=False):
+    def show_session_summary(self, *, session_name, summary, session_path, params=None, read_only=False):
         if self.summary_window is not None and self.summary_window.winfo_exists():
             try:
                 self.summary_window.destroy()
@@ -303,6 +303,7 @@ class App(CTk):
             session_name=session_name,
             summary=summary,
             session_path=session_path,
+            params=params,
             read_only=read_only,
         )
 
@@ -342,7 +343,54 @@ class App(CTk):
             self.set_status("Failed to reveal session.")
             return False
 
-    
+    def _show_session_summary_from_path(self, path_entry):
+        """Reads a session file, computes a summary, and shows the summary dialog."""
+        try:
+            session_name = os.path.splitext(os.path.basename(path_entry))[0]
+            df = read_data(path_entry).fillna("")
+
+            # Compute summary metrics from the session DataFrame
+            att_col = self.column_map.get("attendance", "attendance")
+            exam_col = self.column_map.get("exam", "exam")
+            card_id_col = self.column_map.get("card_id", "card_id")
+            hw_col = self.column_map.get("homework", "homework")
+
+            total = len(df)
+            attended = df[att_col].astype(str).str.lower().eq('attend').sum() if att_col in df.columns else 0
+            attendance_rate = f"{(attended / total) * 100:.1f}%" if total > 0 else "0%"
+
+            missing_exam = 0
+            if exam_col in df.columns and SETTINGS["restrictions"].get("exam"):
+                missing_exam = df[exam_col].astype(str).str.strip().replace("", "0").eq("0").sum()
+
+            missing_hw = 0
+            if hw_col in df.columns and SETTINGS["restrictions"].get("homework"):
+                missing_hw = df[hw_col].astype(str).str.strip().replace("", "0").isin(["", "0"]).sum()
+
+            manual_additions = 0
+            if card_id_col in df.columns:
+                # Manually added students are identified by card IDs starting with "Unknown"
+                manual_additions = df[card_id_col].astype(str).str.strip().str.startswith("Unknown ").sum()
+
+            cancellations = 0
+            notes_col = self.column_map.get("notes", "notes")
+            if notes_col in df.columns:
+                cancellations = df[notes_col].astype(str).str.contains("Canceled", case=False, na=False).sum()
+
+            summary = {
+                "total": total,
+                "attended": attended,
+                "attendance_rate": attendance_rate,
+                "manual_additions": manual_additions,
+                "missing_exam": missing_exam,
+                "missing_hw": missing_hw,
+                "cancellations": cancellations,
+            }
+
+            self.show_session_summary(session_name=session_name, summary=summary, session_path=path_entry, read_only=True)
+            self.set_status(f"Showing summary for '{session_name}'.")
+        except Exception as e:
+            messagebox.showerror("Summary Error", f"Could not generate summary for the session:\n{e}", parent=self)
 
     def _format_size(self, size_bytes):
         if size_bytes < 1024:

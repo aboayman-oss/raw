@@ -76,7 +76,7 @@ class FocusViewWindow:
         self.exam_grade_label = CTkLabel(self.exam_card, text="", font=("Roboto", 14))
         self.exam_grade_label.grid(row=0, column=2, sticky="e", padx=12)
 
-        self.notes = CTkTextbox(details_zone, corner_radius=12, border_width=0, font=("Roboto", 22, "bold"), text_color="#FFFFFF")
+        self.notes = CTkTextbox(details_zone, corner_radius=12, border_width=0, font=("Roboto", 22, "bold"), text_color="#FFFFFF", wrap="word")
         self.notes.pack(fill="both", expand=True, pady=(12, 0))
         self.notes.insert("1.0", "Add notes here...")
         self.notes.bind("<FocusIn>", self._on_notes_focus_in)
