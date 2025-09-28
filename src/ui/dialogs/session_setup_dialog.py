@@ -1,6 +1,7 @@
 """Dialog for configuring basic session metadata."""
 import customtkinter as ctk
 from customtkinter import CTkButton, CTkComboBox, CTkEntry, CTkFrame, CTkLabel, CTkToplevel
+from typing import Optional
 
 from utils.helpers import MIN_SESSION_SETUP_SIZE, bring_window_to_front, ensure_initial_size
 
@@ -14,6 +15,9 @@ class SessionSetupDialog(CTkToplevel):
         self.centers = [self.placeholder] + (centers or [])
         self.callback = callback
         self.has_data = has_data
+        self.stage_cb: Optional[CTkComboBox] = None
+        self.center_cb: Optional[CTkComboBox] = None
+        self.session_ent: Optional[CTkEntry] = None
         self.title("Start New Session")
         self.resizable(False, False)
         self.minsize(*MIN_SESSION_SETUP_SIZE)
@@ -45,7 +49,7 @@ class SessionSetupDialog(CTkToplevel):
         self.bind("<Escape>", lambda _e: self._on_cancel())
         self._focus_after_id = None
         # Give time for widgets to be properly created and mapped
-        self.after(100, self._initialize_window)
+        self._focus_after_id = self.after(100, self._initialize_window)
 
     def _build_form(self):
         content = CTkFrame(self, fg_color="transparent")
@@ -70,8 +74,8 @@ class SessionSetupDialog(CTkToplevel):
         ).grid(row=row, column=0, sticky="ew", pady=(8, 20))
         row += 1
 
-        row = self._add_combo_field(content, row, "Stage", "stage_cb", self.stages)
-        row = self._add_combo_field(content, row, "Center", "center_cb", self.centers)
+        row, self.stage_cb = self._add_combo_field(content, row, "Stage", self.stages)
+        row, self.center_cb = self._add_combo_field(content, row, "Center", self.centers)
 
         CTkLabel(
             content,
@@ -139,7 +143,7 @@ class SessionSetupDialog(CTkToplevel):
             corner_radius=18,
         ).pack(side="right", padx=(0, 12))
 
-    def _add_combo_field(self, parent, start_row, label_text, attr_name, values):
+    def _add_combo_field(self, parent, start_row, label_text, values):
         CTkLabel(
             parent,
             text=label_text,
@@ -161,8 +165,7 @@ class SessionSetupDialog(CTkToplevel):
         )
         combo.grid(row=start_row + 1, column=0, sticky="ew", pady=(6, 16))
         combo.set(self.placeholder)
-        setattr(self, attr_name, combo)
-        return start_row + 2
+        return start_row + 2, combo
 
     def _center_on_parent(self):
         self.update_idletasks()
@@ -179,11 +182,17 @@ class SessionSetupDialog(CTkToplevel):
 
     def _initialize_window(self):
         """Initialize window position and focus after widgets are mapped."""
+        self._focus_after_id = None
+        if not self.winfo_exists():
+            return
         self._center_on_parent()
-        if self.winfo_exists():
+        if self.session_ent and self.session_ent.winfo_exists():
             self.session_ent.focus_set()
 
     def _on_submit(self):
+        if not self.stage_cb or not self.center_cb or not self.session_ent:
+            self.error_var.set("Dialog not ready. Please reopen and try again.")
+            return
         stage = self.stage_cb.get().strip()
         center = self.center_cb.get().strip()
         session_no = self.session_ent.get().strip()
