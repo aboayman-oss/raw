@@ -35,7 +35,7 @@ class ModernDropdown(ctk.CTkFrame):
         active_option_color: Sequence[str] = ("#D6E2FB", "#3D485B"),
         icon_color: Sequence[str] = ("#4B5563", "#A0AEC0"),
         shadow_color: str = "#000000",
-        option_height: int = 36,
+        option_height: int = 30,
         max_visible_items: Optional[int] = 6,
         max_dropdown_height: Optional[int] = 280,
     ):
@@ -219,7 +219,7 @@ class ModernDropdown(ctk.CTkFrame):
     def _calculate_total_height(self, item_count: int) -> int:
         if item_count <= 0:
             return self._option_height + 16
-        padding = 16 + max(0, item_count - 1) * 8
+        padding = 10 + max(0, item_count - 1) * 5
         return item_count * self._option_height + padding
 
     def _calculate_visible_height(self, total_height: int) -> int:
@@ -229,7 +229,7 @@ class ModernDropdown(ctk.CTkFrame):
         if self._max_visible_items:
             candidates.append(self._calculate_total_height(self._max_visible_items))
         visible = min(candidates) if candidates else total_height
-        return max(visible, self._option_height + 16)
+        return max(visible, self._option_height + 10)
 
     # Dropdown lifecycle -------------------------------------------------
 
@@ -248,7 +248,7 @@ class ModernDropdown(ctk.CTkFrame):
         total_height = self._calculate_total_height(len(self._values))
         visible_height = self._calculate_visible_height(total_height)
         needs_scroll = total_height > visible_height
-        container_height = visible_height + 12
+        container_height = visible_height + (12 if needs_scroll else 6)
 
         self._shadow_window = tk.Toplevel(self)
         self._shadow_window.withdraw()
@@ -274,24 +274,27 @@ class ModernDropdown(ctk.CTkFrame):
         self._dropdown_container.pack_propagate(False)
         self._dropdown_container.grid_columnconfigure(0, weight=1)
 
+        frame_width = max(width - 12, 1)
         if needs_scroll:
+            frame_height = max(visible_height, self._option_height + 12)
             self._options_frame = ctk.CTkScrollableFrame(
                 self._dropdown_container,
                 fg_color="transparent",
-                width=max(width - 12, 1),
-                height=max(visible_height, self._option_height + 16),
+                width=frame_width,
+                height=frame_height,
             )
+            frame_expand = True
         else:
             self._options_frame = ctk.CTkFrame(
                 self._dropdown_container,
                 fg_color="transparent",
+                width=frame_width,
             )
-            self._options_frame.pack_propagate(False)
-            self._options_frame.configure(height=max(visible_height, self._option_height + 16))
-        self._options_frame.pack(fill="both", expand=True, padx=6, pady=6)
+            frame_expand = False
+        self._options_frame.pack(fill="both", expand=frame_expand, padx=6, pady=6)
         self._options_frame.grid_columnconfigure(0, weight=1)
-        self._options_frame.configure(width=max(width - 12, 1))
-        self._options_frame.configure(height=max(visible_height, self._option_height + 16))
+        if not needs_scroll:
+            self._options_frame.configure(width=frame_width)
 
         self._option_buttons = []
         for index, option in enumerate(self._values):
@@ -308,7 +311,7 @@ class ModernDropdown(ctk.CTkFrame):
                 border_width=0,
                 command=lambda value=option: self._select(value),
             )
-            pady = (8 if index == 0 else 4, 8 if index == len(self._values) - 1 else 4)
+            pady = (4 if index == 0 else 2, 4 if index == len(self._values) - 1 else 2)
             button.grid(row=index, column=0, sticky="ew", padx=10, pady=pady)
             self._option_buttons.append(button)
 

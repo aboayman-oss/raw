@@ -199,7 +199,7 @@ class SessionSetupDialog(CTkToplevel):
             option_hover_color=self.dropdown_option_hover_color,
             active_option_color=self.dropdown_option_active_color,
             icon_color=self.icon_color,
-            option_height=40,
+            option_height=32,
             max_visible_items=6,
             max_dropdown_height=320,
         )
