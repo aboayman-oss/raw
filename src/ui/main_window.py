@@ -603,6 +603,36 @@ class App(CTk):
         self.set_status(f"Imported {len(df)} records from {os.path.basename(path)}.")
         return True
 
+    def _collect_session_history(self, stages, centers):
+        session_map = {}
+        if not stages or not centers:
+            return session_map
+        if not os.path.isdir(SESSIONS_FOLDER):
+            return session_map
+
+        for entry in os.listdir(SESSIONS_FOLDER):
+            path_entry = os.path.join(SESSIONS_FOLDER, entry)
+            if not os.path.isfile(path_entry):
+                continue
+            name, ext = os.path.splitext(entry)
+            if ext.lower() not in ('.csv', '.xlsx'):
+                continue
+            if ' session ' not in name:
+                continue
+            prefix, number_str = name.rsplit(' session ', 1)
+            if not number_str.isdigit():
+                continue
+            number = int(number_str)
+            for stage in stages:
+                stage_prefix = f"{stage} "
+                if prefix.startswith(stage_prefix):
+                    center_candidate = prefix[len(stage_prefix):]
+                    if center_candidate in centers:
+                        center_map = session_map.setdefault(stage, {})
+                        center_map[center_candidate] = max(center_map.get(center_candidate, 0), number)
+                    break
+        return session_map
+
     def open_scan_window_setup(self):
         if self._session_setup is not None and self._session_setup.winfo_exists():
             bring_window_to_front(self._session_setup)
@@ -612,12 +642,17 @@ class App(CTk):
              messagebox.showwarning("No Data", "Please import data before starting a session.")
              return
 
+        stage_options = SETTINGS.get("stage_options", []) or []
+        center_options = SETTINGS.get("center_options", []) or []
+        session_history = self._collect_session_history(stage_options, center_options)
+
         try:
             self._session_setup = SessionSetupDialog(
                 self,
-                SETTINGS.get("stage_options", []),
-                SETTINGS.get("center_options", []),
+                stage_options,
+                center_options,
                 has_data=self.data_df is not None,
+                session_data=session_history,
                 callback=self._on_session_setup_finished,
             )
         except Exception as e:
