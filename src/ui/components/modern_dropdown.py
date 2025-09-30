@@ -7,6 +7,8 @@ from typing import Callable, List, Optional, Sequence
 
 import customtkinter as ctk
 
+from utils.helpers import set_dark_title_bar
+
 
 class ModernDropdown(ctk.CTkFrame):
     """Composite drop-down control with smooth animations and modern styling."""
@@ -257,6 +259,7 @@ class ModernDropdown(ctk.CTkFrame):
         self._shadow_window.configure(bg=self._shadow_color)
 
         self._dropdown_window = ctk.CTkToplevel(self)
+        set_dark_title_bar(self._dropdown_window)
         self._dropdown_window.withdraw()
         self._dropdown_window.overrideredirect(True)
         self._dropdown_window.transient(self.winfo_toplevel())

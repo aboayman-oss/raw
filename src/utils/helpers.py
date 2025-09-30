@@ -1,9 +1,24 @@
-"""Shared constants and helpers for the RFID Attendance Manager UI."""
+﻿"""Shared constants and helpers for the RFID Attendance Manager UI."""
 import os
 import sys
+import ctypes
+from ctypes import byref, c_int, c_uint, c_void_p, c_size_t, wintypes
 from pathlib import Path
 
 import pandas as pd
+
+DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1 = 19
+DWMWA_CAPTION_COLOR = 35
+DWMWA_TEXT_COLOR = 36
+WCA_USEDARKMODECOLORS = 26
+
+_DARK_MODE_APP_INITIALIZED = False
+
+
+class WINDOWCOMPOSITIONATTRIBDATA(ctypes.Structure):
+    _fields_ = [("Attribute", c_int), ("Data", c_void_p), ("SizeOfData", c_size_t)]
+
 
 def get_runtime_base():
     """Return the folder containing the script or executable."""
@@ -103,6 +118,170 @@ def bring_window_to_front(window):
         window.after_idle(lambda: window.attributes('-topmost', False))
     except Exception:
         pass
+
+
+def _ensure_app_dark_mode():
+    global _DARK_MODE_APP_INITIALIZED
+    if _DARK_MODE_APP_INITIALIZED or sys.platform != "win32":
+        return
+    try:
+        uxtheme = ctypes.windll.uxtheme
+    except Exception:
+        _DARK_MODE_APP_INITIALIZED = True
+        return
+    try:
+        allow_app = getattr(uxtheme, "AllowDarkModeForApp", None)
+        if allow_app:
+            allow_app.argtypes = [wintypes.BOOL]
+            allow_app.restype = wintypes.BOOL
+            allow_app(wintypes.BOOL(True))
+        set_app_mode = getattr(uxtheme, "SetPreferredAppMode", None)
+        if set_app_mode:
+            set_app_mode.argtypes = [c_int]
+            set_app_mode.restype = c_int
+            # APPMODE_ALLOWDARK = 2
+            set_app_mode(2)
+        flush_themes = getattr(uxtheme, "FlushMenuThemes", None)
+        if flush_themes:
+            flush_themes()
+    except Exception:
+        pass
+    _DARK_MODE_APP_INITIALIZED = True
+
+
+def _get_window_handle(window):
+    try:
+        window.update_idletasks()
+    except Exception:
+        pass
+    try:
+        hwnd = window.winfo_id()
+    except Exception:
+        return None
+    if not hwnd:
+        return None
+    try:
+        get_ancestor = ctypes.windll.user32.GetAncestor
+        get_ancestor.argtypes = [wintypes.HWND, c_uint]
+        get_ancestor.restype = wintypes.HWND
+        ancestor = get_ancestor(wintypes.HWND(hwnd), c_uint(2))
+        if ancestor:
+            hwnd = ancestor
+    except Exception:
+        try:
+            parent = ctypes.windll.user32.GetParent(wintypes.HWND(hwnd))
+            if parent:
+                hwnd = parent
+        except Exception:
+            pass
+    return int(hwnd) if hwnd else None
+
+
+
+def _apply_dark_mode_to_hwnd(hwnd):
+    applied = False
+    hwnd = wintypes.HWND(hwnd)
+    try:
+        uxtheme = ctypes.windll.uxtheme
+    except Exception:
+        uxtheme = None
+    if uxtheme:
+        try:
+            allow_window = getattr(uxtheme, "AllowDarkModeForWindow", None)
+            if allow_window:
+                allow_window.argtypes = [wintypes.HWND, wintypes.BOOL]
+                allow_window.restype = wintypes.BOOL
+                allow_window(hwnd, wintypes.BOOL(True))
+        except Exception:
+            pass
+    try:
+        dwm = ctypes.windll.dwmapi
+    except Exception:
+        dwm = None
+    if dwm:
+        try:
+            dwm.DwmSetWindowAttribute.argtypes = [wintypes.HWND, c_uint, c_void_p, c_uint]
+        except AttributeError:
+            pass
+        value = c_int(1)
+        size_value = ctypes.sizeof(value)
+        for attribute in (DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1):
+            try:
+                result = dwm.DwmSetWindowAttribute(hwnd, c_uint(attribute), byref(value), size_value)
+            except Exception:
+                continue
+            if result == 0:
+                applied = True
+                break
+        caption_color = c_uint(0x001A1A1A)
+        text_color = c_uint(0x00FFFFFF)
+        size_color = ctypes.sizeof(caption_color)
+        for attribute, data in ((DWMWA_CAPTION_COLOR, caption_color), (DWMWA_TEXT_COLOR, text_color)):
+            try:
+                result = dwm.DwmSetWindowAttribute(hwnd, c_uint(attribute), byref(data), size_color)
+            except Exception:
+                continue
+            if result == 0:
+                applied = True
+    if not applied:
+        try:
+            user32 = ctypes.windll.user32
+            set_attr = getattr(user32, "SetWindowCompositionAttribute")
+        except Exception:
+            return applied
+        try:
+            set_attr.argtypes = [wintypes.HWND, ctypes.POINTER(WINDOWCOMPOSITIONATTRIBDATA)]
+        except AttributeError:
+            pass
+        try:
+            use_dark = wintypes.BOOL(True)
+            data = WINDOWCOMPOSITIONATTRIBDATA(WCA_USEDARKMODECOLORS, ctypes.byref(use_dark), c_size_t(ctypes.sizeof(use_dark)))
+            set_attr(hwnd, byref(data))
+            applied = True
+        except Exception:
+            pass
+    return applied
+
+
+
+def set_dark_title_bar(window, *, attempts=12, interval_ms=90):
+    '''Request dark mode for the native title bar, retrying while the window settles.'''
+    if window is None or sys.platform != "win32":
+        return
+    _ensure_app_dark_mode()
+    try:
+        if not getattr(window, "_dark_title_bar_bound", False):
+            def _remap(_event=None):
+                set_dark_title_bar(window, attempts=attempts, interval_ms=interval_ms)
+            window._dark_title_bar_bound = True
+            window.bind("<Map>", _remap, add="+")
+            window.bind("<FocusIn>", _remap, add="+")
+    except Exception:
+        pass
+    try:
+        job = getattr(window, "_dark_title_job", None)
+        if job:
+            window.after_cancel(job)
+    except Exception:
+        pass
+    attempts = max(int(attempts), 1)
+
+    def _attempt(remaining):
+        hwnd = _get_window_handle(window)
+        if hwnd is not None:
+            _apply_dark_mode_to_hwnd(hwnd)
+        remaining -= 1
+        if remaining <= 0:
+            return
+        try:
+            window._dark_title_job = window.after(interval_ms, lambda: _attempt(remaining))
+        except Exception:
+            pass
+
+    try:
+        window._dark_title_job = window.after(0, lambda: _attempt(attempts))
+    except Exception:
+        _attempt(attempts)
 
 
 def ensure_initial_size(window, *, min_size=None, padding=(0, 0)):

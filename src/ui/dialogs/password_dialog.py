@@ -1,9 +1,12 @@
 '''A simple password dialog.'''
 import customtkinter as ctk
 
+from utils.helpers import set_dark_title_bar
+
 class PasswordDialog(ctk.CTkToplevel):
     def __init__(self, parent):
         super().__init__(parent)
+        set_dark_title_bar(self)
         self.title("Password Required")
         self.transient(parent)
         self.grab_set()

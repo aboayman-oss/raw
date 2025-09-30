@@ -20,6 +20,7 @@ from utils.helpers import (
     bring_window_to_front,
     ensure_initial_size,
     read_data,
+    set_dark_title_bar,
 )
 from .focus_view_window import FocusViewWindow
 
@@ -119,6 +120,7 @@ class ScanWindow(CTkToplevel):
 
     def __init__(self, parent, session_mgr, read_only=False):
         super().__init__(parent)
+        set_dark_title_bar(self)
         self.parent = parent
         self.sm = session_mgr
         self.read_only = read_only
@@ -335,6 +337,7 @@ class ScanWindow(CTkToplevel):
         current_notes = self.tree.set(iid, "notes")
         student_name = self.tree.set(iid, "name") or "Student"
         modal = CTkToplevel(self)
+        set_dark_title_bar(modal)
         modal.title(f"Edit Notes - {student_name}")
         modal.geometry("420x260")
         modal.transient(self)

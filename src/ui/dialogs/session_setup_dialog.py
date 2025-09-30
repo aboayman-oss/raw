@@ -4,12 +4,13 @@ from customtkinter import CTkButton, CTkEntry, CTkFrame, CTkLabel, CTkToplevel
 from typing import Dict, Optional
 
 from ui.components.modern_dropdown import ModernDropdown
-from utils.helpers import MIN_SESSION_SETUP_SIZE, bring_window_to_front, ensure_initial_size
+from utils.helpers import MIN_SESSION_SETUP_SIZE, bring_window_to_front, ensure_initial_size, set_dark_title_bar
 
 
 class SessionSetupDialog(CTkToplevel):
     def __init__(self, parent, stages, centers, has_data, session_data, callback):
         super().__init__(parent)
+        set_dark_title_bar(self)
         self.parent = parent
         self.stage_placeholder = "Select a Stage"
         self.center_placeholder = "Select a Center"

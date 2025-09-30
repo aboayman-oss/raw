@@ -8,7 +8,7 @@ from PIL import Image, ImageDraw, ImageTk, ImageFont
 
 from customtkinter import CTkButton, CTkFrame, CTkLabel, CTkToplevel, CTkImage
 
-from utils.helpers import MIN_SUMMARY_SIZE, bring_window_to_front, ensure_initial_size, ASSETS_DIR
+from utils.helpers import MIN_SUMMARY_SIZE, bring_window_to_front, ensure_initial_size, ASSETS_DIR, set_dark_title_bar
 
 
 class CircularProgressBar(CTkFrame):
@@ -97,6 +97,7 @@ class CircularProgressBar(CTkFrame):
 class SessionSummaryDialog(CTkToplevel):
     def __init__(self, parent, *, session_name, summary, session_path, params=None, read_only=False):
         super().__init__(parent)
+        set_dark_title_bar(self)
         self.parent = parent
         self.session_name = session_name
         self.summary = summary or {}

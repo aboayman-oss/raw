@@ -35,7 +35,8 @@ from utils.helpers import (
     SETTINGS_ICON_FILE,
     IMPORT_ICON_FILE,
     NEW_SESSION_ICON_FILE,
-    DASHBOARD_ICON_FILE
+    DASHBOARD_ICON_FILE,
+    set_dark_title_bar
 )
 
 class App(CTk):
@@ -47,6 +48,7 @@ class App(CTk):
         # ------------------------
 
         self.title("RFID Attendance Manager")
+        set_dark_title_bar(self)
         self.column_map = {}
         self.data_df    = None
         self.settings_window = None

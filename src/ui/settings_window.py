@@ -26,6 +26,7 @@ from utils.helpers import (
     SETTINGS_FILE,
     bring_window_to_front,
     ensure_initial_size,
+    set_dark_title_bar,
 )
 
 # Import read_data from its module
@@ -36,6 +37,7 @@ class SettingsWindow(CTkToplevel):
 
     def __init__(self, parent):
         super().__init__(parent)
+        set_dark_title_bar(self)
         self.title("Settings")
         self.minsize(*MIN_SETTINGS_SIZE)
 

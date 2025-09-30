@@ -3,11 +3,12 @@ import customtkinter as ctk
 from customtkinter import CTkButton, CTkEntry, CTkFrame, CTkLabel, CTkToplevel, CTkImage
 from PIL import Image # Pillow is required for CTkImage
 
-from utils.helpers import MIN_SUMMARY_SIZE, bring_window_to_front, ensure_initial_size
+from utils.helpers import MIN_SUMMARY_SIZE, bring_window_to_front, ensure_initial_size, set_dark_title_bar
 
 class AddStudentDialog(CTkToplevel):
     def __init__(self, parent, *, card_id=None, on_submit=None, duplicate_checker=None, default_notes="Manually added"):
         super().__init__(parent)
+        set_dark_title_bar(self)
         self.parent = parent
         self.card_id = card_id.zfill(8) if card_id and card_id.isdigit() else card_id
         self._on_submit = on_submit

@@ -5,11 +5,12 @@ from tkinter import messagebox, ttk
 
 from customtkinter import CTkButton, CTkFrame, CTkLabel, CTkToplevel
 
-from utils.helpers import MIN_PAST_SESSIONS_SIZE, SESSIONS_FOLDER, bring_window_to_front, ensure_initial_size
+from utils.helpers import MIN_PAST_SESSIONS_SIZE, SESSIONS_FOLDER, bring_window_to_front, ensure_initial_size, set_dark_title_bar
 
 class PastSessionsWindow(CTkToplevel):
     def __init__(self, parent):
         super().__init__(parent)
+        set_dark_title_bar(self)
         self.parent = parent
         self.title("Past Sessions")
         self.minsize(*MIN_PAST_SESSIONS_SIZE)
