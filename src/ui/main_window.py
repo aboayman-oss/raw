@@ -54,6 +54,13 @@ class App(CTk):
         self._session_setup = None
         self.past_sessions_window = None
         self.summary_window = None
+        self.dashboard_frame = None
+        self.past_sessions_frame = None
+        self._dashboard_initialized = False
+        self._past_sessions_initialized = False
+        self._past_sessions_list_dirty = True
+        self._session_files_cache = None
+        self.logo_img = None
 
         self._load_icons()
 
@@ -83,6 +90,17 @@ class App(CTk):
         self.import_icon = self._create_icon(IMPORT_ICON_FILE)
         self.new_session_icon = self._create_icon(NEW_SESSION_ICON_FILE)
         self.dashboard_icon = self._create_icon(DASHBOARD_ICON_FILE)
+        if os.path.exists(LOGO_FILE):
+            try:
+                logo = Image.open(LOGO_FILE)
+                if logo.width > 0 and logo.height > 0:
+                    target_width = 100
+                    ratio = target_width / logo.width
+                    target_height = max(1, int(logo.height * ratio))
+                    logo = logo.resize((target_width, target_height), Image.Resampling.LANCZOS)
+                    self.logo_img = CTkImage(light_image=logo, dark_image=logo, size=(target_width, target_height))
+            except Exception as e:
+                print(f"Warning: Could not load logo image: {e}")
 
     def _build_ui(self):
         # 1. Configure root window grid
@@ -95,8 +113,18 @@ class App(CTk):
         # 3. Build the main content frame on the right
         self.content_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
         self.content_frame.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
-        
-        self._build_dashboard_view() # Initially show the dashboard
+        self.content_frame.grid_rowconfigure(0, weight=1)
+        self.content_frame.grid_columnconfigure(0, weight=1)
+
+        self.dashboard_frame = ctk.CTkFrame(self.content_frame, corner_radius=0, fg_color="transparent")
+        self.dashboard_frame.grid(row=0, column=0, sticky="nsew")
+
+        self.past_sessions_frame = ctk.CTkFrame(self.content_frame, corner_radius=0, fg_color="transparent")
+        self.past_sessions_frame.grid(row=0, column=0, sticky="nsew")
+
+        self._build_dashboard_view()
+        self._build_past_sessions_view()
+        self._show_dashboard_view()
 
         # Status bar setup
         self.status_var = ctk.StringVar(value="Ready.")
@@ -122,39 +150,27 @@ class App(CTk):
         settings_button.pack(side="bottom", pady=20, padx=10)
 
     def _build_dashboard_view(self):
-        # Clear any previous content
-        for widget in self.content_frame.winfo_children():
-            widget.destroy()
+        if self._dashboard_initialized or self.dashboard_frame is None:
+            return
 
-        self.content_frame.grid_columnconfigure(0, weight=1)
-        self.content_frame.grid_rowconfigure(2, weight=1)
+        frame = self.dashboard_frame
+        frame.grid_columnconfigure(0, weight=1)
+        frame.grid_rowconfigure(2, weight=1)
 
-        # Build the header
-        self._build_header()
+        self._build_header(frame)
+        self._build_start_session_card(frame)
+        self._build_recent_sessions_card(frame)
 
-        # Build the two main cards
-        self._build_start_session_card()
-        self._build_recent_sessions_card()
-        
-        # Update UI based on initial data state
         self._update_ui_for_data_state()
+        self._dashboard_initialized = True
 
-    def _build_header(self):
-        header = CTkFrame(self.content_frame, fg_color="transparent")
+    def _build_header(self, parent):
+        header = CTkFrame(parent, fg_color="transparent")
         header.grid(row=0, column=0, sticky="ew", pady=(0, 12))
         header.grid_columnconfigure(1, weight=1)
 
-        try:
-            logo = Image.open(LOGO_FILE)
-            if logo.width > 0 and logo.height > 0:
-                target_width = 100
-                ratio = target_width / logo.width
-                target_height = max(1, int(logo.height * ratio))
-                logo = logo.resize((target_width, target_height), Image.Resampling.LANCZOS)
-                self.logo_img = CTkImage(light_image=logo, dark_image=logo, size=(target_width, target_height))
-                CTkLabel(header, image=self.logo_img, text="").grid(row=0, column=0, sticky="w", padx=(0, 12))
-        except Exception as e:
-            print(f"Warning: Could not load logo image: {e}")
+        if self.logo_img is not None:
+            CTkLabel(header, image=self.logo_img, text="").grid(row=0, column=0, sticky="w", padx=(0, 12))
 
         title_holder = CTkFrame(header, fg_color="transparent")
         title_holder.grid(row=0, column=1, sticky="w")
@@ -169,17 +185,17 @@ class App(CTk):
             font=("Arial", 14)
         ).pack(anchor="w", pady=(4, 0))
 
-    def _build_start_session_card(self):
-        self.start_card = ctk.CTkFrame(self.content_frame, corner_radius=12)
+    def _build_start_session_card(self, parent):
+        self.start_card = ctk.CTkFrame(parent, corner_radius=12)
         self.start_card.grid(row=1, column=0, sticky="ew", pady=(20, 20))
         self.start_card.grid_columnconfigure(1, weight=1)
-        
+
         self.start_card_title = ctk.CTkLabel(self.start_card, text="Start a New Session", font=("Arial", 18, "bold"), anchor="w")
         self.start_card_title.grid(row=0, column=0, columnspan=2, sticky="ew", padx=20, pady=(20, 4))
-        
+
         self.start_card_subtitle = ctk.CTkLabel(self.start_card, text="Import a student list to begin.", anchor="w")
         self.start_card_subtitle.grid(row=1, column=0, columnspan=2, sticky="ew", padx=20, pady=(0, 20))
-        
+
         self.start_session_btn = ctk.CTkButton(
             self.start_card,
             text="Start New Session",
@@ -190,7 +206,7 @@ class App(CTk):
             height=40
         )
         self.start_session_btn.grid(row=2, column=1, sticky="e", padx=20, pady=(0, 20))
-        
+
         self.import_btn = ctk.CTkButton(
             self.start_card,
             text="Import list",
@@ -202,20 +218,48 @@ class App(CTk):
         )
         self.import_btn.grid(row=2, column=0, sticky="w", padx=20, pady=(0, 20))
 
-    def _build_recent_sessions_card(self):
-        recent_card = ctk.CTkFrame(self.content_frame, corner_radius=12)
+    def _build_recent_sessions_card(self, parent):
+        recent_card = ctk.CTkFrame(parent, corner_radius=12)
         recent_card.grid(row=2, column=0, sticky="nsew")
         recent_card.grid_columnconfigure(0, weight=1)
         recent_card.grid_rowconfigure(1, weight=1)
-        
+
         title = ctk.CTkLabel(recent_card, text="Recent Sessions", font=("Arial", 16, "bold"), anchor="w")
         title.grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 10))
-        
+
         self.recent_sessions_frame = ctk.CTkScrollableFrame(recent_card, fg_color="transparent")
         self.recent_sessions_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=0)
         self.recent_sessions_frame.grid_columnconfigure(0, weight=1)
 
         self._refresh_recent_sessions()
+
+    def _invalidate_session_files_cache(self):
+        self._session_files_cache = None
+        self._past_sessions_list_dirty = True
+
+    def _scan_session_files(self):
+        files = []
+        if not os.path.isdir(SESSIONS_FOLDER):
+            return files
+        try:
+            entries = os.listdir(SESSIONS_FOLDER)
+        except OSError:
+            return files
+        for entry in entries:
+            path_entry = os.path.join(SESSIONS_FOLDER, entry)
+            if os.path.isfile(path_entry) and entry.lower().endswith((".csv", ".xlsx")):
+                try:
+                    stats = os.stat(path_entry)
+                except OSError:
+                    continue
+                files.append((path_entry, stats.st_mtime, stats.st_size))
+        files.sort(key=lambda item: item[1], reverse=True)
+        return files
+
+    def _get_session_files(self):
+        if self._session_files_cache is None:
+            self._session_files_cache = self._scan_session_files()
+        return self._session_files_cache
 
     def _refresh_recent_sessions(self):
         if not hasattr(self, "recent_sessions_frame"):
@@ -224,50 +268,38 @@ class App(CTk):
         for widget in self.recent_sessions_frame.winfo_children():
             widget.destroy()
 
-        if not os.path.isdir(SESSIONS_FOLDER):
-            return
-            
-        files = []
-        try:
-            for entry in os.listdir(SESSIONS_FOLDER):
-                path_entry = os.path.join(SESSIONS_FOLDER, entry)
-                if os.path.isfile(path_entry) and entry.lower().endswith((".csv", ".xlsx")):
-                    files.append((path_entry, os.path.getmtime(path_entry)))
-        except FileNotFoundError:
-            return
+        files = self._get_session_files()
 
-        files.sort(key=lambda item: item[1], reverse=True)
-        
         if not files:
             no_sessions_label = ctk.CTkLabel(self.recent_sessions_frame, text="No recent sessions found.", anchor="w", justify="left")
             no_sessions_label.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
             return
 
-        for i, (path_entry, modified) in enumerate(files[:5]):
+        for i, (path_entry, modified, _) in enumerate(files[:5]):
             name = os.path.splitext(os.path.basename(path_entry))[0]
             stamp = datetime.fromtimestamp(modified).strftime("%d %b %Y %H:%M")
-            
+
             item_frame = ctk.CTkFrame(self.recent_sessions_frame, fg_color="transparent")
             item_frame.grid(row=i, column=0, sticky="ew", pady=5)
             item_frame.grid_columnconfigure(0, weight=1)
-            
+
             info_label = ctk.CTkLabel(item_frame, text=f"{name}\n{stamp}", anchor="w", justify="left")
             info_label.grid(row=0, column=0, sticky="w", padx=10)
-            
+
             btn_frame = ctk.CTkFrame(item_frame, fg_color="transparent")
             btn_frame.grid(row=0, column=1, sticky="e")
-            
+
             reveal_btn = ctk.CTkButton(
-                btn_frame, 
-                text="Show", 
+                btn_frame,
+                text="Show",
                 width=60,
                 command=lambda p=path_entry: self._show_session_summary_from_path(p)
             )
             reveal_btn.pack(side="right", padx=(5, 10))
 
             open_btn = ctk.CTkButton(
-                btn_frame, 
-                text="Open", 
+                btn_frame,
+                text="Open",
                 width=60,
                 command=lambda p=path_entry: self._open_session_path(p, read_only=False)
             )
@@ -291,6 +323,8 @@ class App(CTk):
 
     def _show_dashboard_view(self):
         self._build_dashboard_view()
+        if self.dashboard_frame is not None:
+            self.dashboard_frame.tkraise()
 
     def show_session_summary(self, *, session_name, summary, session_path, params=None, read_only=False):
         if self.summary_window is not None and self.summary_window.winfo_exists():
@@ -426,8 +460,9 @@ class App(CTk):
             except Exception as exc:
                 failures.append(f"{os.path.basename(path_entry)}: {exc}")
 
-        self._populate_past_sessions_list() # Refresh the current view
-        self._refresh_recent_sessions()     # Also refresh the dashboard view
+        self._invalidate_session_files_cache()
+        self._populate_past_sessions_list()
+        self._refresh_recent_sessions()
 
         if failures:
             messagebox.showerror(
@@ -445,18 +480,24 @@ class App(CTk):
             self.set_status("All past sessions cleared.")
 
     def _show_past_sessions_view(self):
-        """Clears the content frame and builds the past sessions view."""
-        for widget in self.content_frame.winfo_children():
-            widget.destroy()
+        """Shows the past sessions view without rebuilding the entire layout."""
         self._build_past_sessions_view()
+        if self._past_sessions_list_dirty:
+            self._populate_past_sessions_list()
+        if self.past_sessions_frame is not None:
+            self.past_sessions_frame.tkraise()
 
     def _build_past_sessions_view(self):
         """Builds the UI for browsing past sessions within the content_frame."""
-        self.content_frame.grid_rowconfigure(1, weight=1)
-        self.content_frame.grid_columnconfigure(0, weight=1)
+        if self._past_sessions_initialized or self.past_sessions_frame is None:
+            return
+
+        frame = self.past_sessions_frame
+        frame.grid_rowconfigure(1, weight=1)
+        frame.grid_columnconfigure(0, weight=1)
 
         # Header with title and global actions
-        header_frame = ctk.CTkFrame(self.content_frame, fg_color="transparent")
+        header_frame = ctk.CTkFrame(frame, fg_color="transparent")
         header_frame.grid(row=0, column=0, sticky="ew", pady=(0, 12))
         header_frame.grid_columnconfigure(0, weight=1)
 
@@ -465,38 +506,35 @@ class App(CTk):
         action_buttons_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
         action_buttons_frame.grid(row=0, column=1, sticky="e")
 
-        ctk.CTkButton(action_buttons_frame, text="Refresh", command=self._populate_past_sessions_list).pack(side="left", padx=(0, 10))
+        ctk.CTkButton(action_buttons_frame, text="Refresh", command=lambda: self._populate_past_sessions_list(force_scan=True)).pack(side="left", padx=(0, 10))
 
-    # Removed Clear All button
+        # Removed Clear All button
 
         # Scrollable frame for the list
-        self.sessions_list_frame = ctk.CTkScrollableFrame(self.content_frame, label_text="Session Files")
+        self.sessions_list_frame = ctk.CTkScrollableFrame(frame, label_text="Session Files")
         self.sessions_list_frame.grid(row=1, column=0, sticky="nsew")
         self.sessions_list_frame.grid_columnconfigure(0, weight=1)
 
         # Populate the list with session data
-        self._populate_past_sessions_list()
+        self._populate_past_sessions_list(force_scan=True)
+        self._past_sessions_initialized = True
 
-    def _populate_past_sessions_list(self):
+    def _populate_past_sessions_list(self, *, force_scan=False):
         """Fetches session data and populates the scrollable list with custom widgets."""
+        if force_scan:
+            self._invalidate_session_files_cache()
+
+        if not hasattr(self, "sessions_list_frame"):
+            return
+
         for widget in self.sessions_list_frame.winfo_children():
             widget.destroy()
 
-        if not os.path.isdir(SESSIONS_FOLDER):
-            files = []
-        else:
-            files = []
-            for entry in os.listdir(SESSIONS_FOLDER):
-                path_entry = os.path.join(SESSIONS_FOLDER, entry)
-                if os.path.isfile(path_entry) and entry.lower().endswith((".csv", ".xlsx")):
-                    stats = os.stat(path_entry)
-                    files.append((path_entry, stats.st_mtime, stats.st_size))
-            files.sort(key=lambda item: item[1], reverse=True)
-
-    # Removed Clear All button state configuration
+        files = self._get_session_files()
 
         if not files:
             ctk.CTkLabel(self.sessions_list_frame, text="No session files found.").pack(pady=20)
+            self._past_sessions_list_dirty = False
             return
 
         for path, modified, size in files:
@@ -509,6 +547,7 @@ class App(CTk):
                 open_func=self._open_session_path,
                 reveal_func=self._reveal_session_path
             ).pack(fill="x", expand=True, padx=10, pady=5)
+        self._past_sessions_list_dirty = False
 
     def _load_last_data(self):
         self.data_df = None
@@ -674,7 +713,9 @@ class App(CTk):
         session_df = read_data(session_path)
         sm = SessionManager(name, params, self.column_map, session_df)
         
+        self._invalidate_session_files_cache()
         self._refresh_recent_sessions()
+        self._populate_past_sessions_list()
         if self.past_sessions_window is not None and self.past_sessions_window.winfo_exists():
             self.past_sessions_window.refresh()
             
