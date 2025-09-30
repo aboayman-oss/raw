@@ -515,17 +515,10 @@ class App(CTk):
         self.current_data_path = None
         if os.path.exists(LAST_DATA_FILE):
             try:
-                with open(LAST_DATA_FILE) as f:
-                    last_data = json.load(f)
-                    path = last_data.get("path")
-                    if path and os.path.exists(path):
-                        self.data_df = read_data(path)
-                        self.current_data_path = path
-            except (json.JSONDecodeError, KeyError, FileNotFoundError) as e:
-                print(f"Could not load last data file: {e}")
-                self.data_df = None
-                self.current_data_path = None
-        
+                os.remove(LAST_DATA_FILE)
+            except OSError as e:
+                print(f"Could not clear last data file: {e}")
+
         if hasattr(self, "start_card_subtitle"):
             self._update_ui_for_data_state()
         self.set_status("Ready.")
@@ -597,9 +590,7 @@ class App(CTk):
         
         self.data_df = df
         self.current_data_path = path
-        with open(LAST_DATA_FILE, "w") as f:
-            json.dump({"path": path}, f, indent=2)
-        
+
         self.set_status(f"Imported {len(df)} records from {os.path.basename(path)}.")
         return True
 
