@@ -147,7 +147,7 @@ class App(CTk):
         try:
             logo = Image.open(LOGO_FILE)
             if logo.width > 0 and logo.height > 0:
-                target_width = 56
+                target_width = 100
                 ratio = target_width / logo.width
                 target_height = max(1, int(logo.height * ratio))
                 logo = logo.resize((target_width, target_height), Image.Resampling.LANCZOS)
@@ -160,12 +160,12 @@ class App(CTk):
         title_holder.grid(row=0, column=1, sticky="w")
         CTkLabel(
             title_holder,
-            text="RFID Attendance Manager",
+            text="Attendance Manager",
             font=("Arial", 24, "bold")
         ).pack(anchor="w")
         CTkLabel(
             title_holder,
-            text="Start scans, review sessions, and adjust preferences from one place.",
+            text="Powered by Gawish",
             font=("Arial", 14)
         ).pack(anchor="w", pady=(4, 0))
 
@@ -177,7 +177,7 @@ class App(CTk):
         self.start_card_title = ctk.CTkLabel(self.start_card, text="Start a New Session", font=("Arial", 18, "bold"), anchor="w")
         self.start_card_title.grid(row=0, column=0, columnspan=2, sticky="ew", padx=20, pady=(20, 4))
         
-        self.start_card_subtitle = ctk.CTkLabel(self.start_card, text="Import a student roster to begin.", anchor="w")
+        self.start_card_subtitle = ctk.CTkLabel(self.start_card, text="Import a student list to begin.", anchor="w")
         self.start_card_subtitle.grid(row=1, column=0, columnspan=2, sticky="ew", padx=20, pady=(0, 20))
         
         self.start_session_btn = ctk.CTkButton(
@@ -193,7 +193,7 @@ class App(CTk):
         
         self.import_btn = ctk.CTkButton(
             self.start_card,
-            text="Import Roster",
+            text="Import list",
             image=self.import_icon,
             compound="left",
             command=self._handle_import,
@@ -277,13 +277,13 @@ class App(CTk):
         if self.data_df is not None and self.current_data_path:
             rows = len(self.data_df)
             filename = os.path.basename(self.current_data_path)
-            self.start_card_subtitle.configure(text=f"Roster Loaded: {rows:,} students from '{filename}'")
+            self.start_card_subtitle.configure(text=f"List Loaded: {rows:,} students from '{filename}'")
             self.start_session_btn.configure(state="normal")
-            self.import_btn.configure(text="Import")
+            self.import_btn.configure(text="Import New")
         else:
-            self.start_card_subtitle.configure(text="Import a student roster to begin.")
+            self.start_card_subtitle.configure(text="Import a student list to begin.")
             self.start_session_btn.configure(state="disabled")
-            self.import_btn.configure(text="Import Roster")
+            self.import_btn.configure(text="Import List")
 
     def _handle_import(self):
         if self.import_csv():
