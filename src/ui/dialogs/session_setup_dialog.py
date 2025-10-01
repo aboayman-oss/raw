@@ -1,4 +1,4 @@
-"""Dialog for configuring basic session metadata."""
+﻿"""Dialog for configuring basic session metadata."""
 import customtkinter as ctk
 from customtkinter import CTkButton, CTkEntry, CTkFrame, CTkLabel, CTkToplevel
 from typing import Dict, Optional
@@ -39,9 +39,9 @@ class SessionSetupDialog(CTkToplevel):
         self.notice_var = ctk.StringVar(value=notice_text)
         self.error_var = ctk.StringVar(value="")
 
-        self.title_font = ctk.CTkFont(size=21, weight="bold")
-        self.body_font = ctk.CTkFont(size=13)
-        self.label_font = ctk.CTkFont(size=12, weight="bold")
+        self.title_font = ctk.CTkFont(family="Roboto", size=21, weight="bold")
+        self.body_font = ctk.CTkFont(family="Roboto", size=13)
+        self.label_font = ctk.CTkFont(family="Roboto", size=12, weight="bold")
 
         self.field_bg_color = ("#E8EDF6", "#2C3039")
         self.field_border_color = ("#CBD5E1", "#3D4452")

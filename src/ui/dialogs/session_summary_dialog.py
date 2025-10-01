@@ -13,8 +13,8 @@ from utils.helpers import MIN_SUMMARY_SIZE, bring_window_to_front, ensure_initia
 
 class CircularProgressBar(CTkFrame):
     def __init__(self, parent, size=100, progress_width=10,
-                 track_width=10, progress_color="#22c55e",
-                 track_color="#3e4046", text_font=("Arial", 24, "bold"),
+                 track_width=10, progress_color="#22c55e", track_color="#3e4046",
+                 text_font=("Roboto", 24, "bold"),
                  text_color="#ffffff"):
         super().__init__(parent, fg_color="transparent")
 
@@ -43,7 +43,7 @@ class CircularProgressBar(CTkFrame):
         try:
             # MODIFIED: Load font at scaled size for high-res drawing
             scaled_font_size = text_font[1] * self.scale_factor
-            self.font = ImageFont.truetype("arial.ttf", scaled_font_size)
+            self.font = ImageFont.truetype("Roboto-Regular.ttf", scaled_font_size)
         except IOError:
             self.font = ImageFont.load_default()
 
@@ -118,17 +118,17 @@ class SessionSummaryDialog(CTkToplevel):
         header = CTkFrame(container, fg_color="transparent")
         header.grid(row=0, column=0, sticky="ew")
         header.grid_columnconfigure(0, weight=1)
-        CTkLabel(header, text="Session Summary", font=("Arial", 24, "bold")).grid(row=0, column=0, sticky="w")
+        CTkLabel(header, text="Session Summary", font=("Roboto", 24, "bold")).grid(row=0, column=0, sticky="w")
 
         # Display Session Name
         details_frame = CTkFrame(header, fg_color="transparent")
         details_frame.grid(row=1, column=0, sticky="w", pady=(4, 0))
 
         session_display_name = os.path.splitext(os.path.basename(self.session_path))[0] if self.session_path else self.session_name
-        CTkLabel(details_frame, text=session_display_name, font=("Arial", 15, "bold"), text_color=("#1f6aa5", "#a9c8e7")).pack(side="left")
+        CTkLabel(details_frame, text=session_display_name, font=("Roboto", 15, "bold"), text_color=("#1f6aa5", "#a9c8e7")).pack(side="left")
 
         if read_only:
-            CTkLabel(header, text="Read-only session", font=("Arial", 14), text_color="#64748b").grid(row=2, column=0, sticky="w", pady=(8, 0))
+            CTkLabel(header, text="Read-only session", font=("Roboto", 14), text_color="#64748b").grid(row=2, column=0, sticky="w", pady=(8, 0))
 
         metrics_frame = CTkFrame(container, fg_color="transparent")
         metrics_frame.grid(row=1, column=0, sticky="ew", pady=(18, 12))
@@ -139,14 +139,14 @@ class SessionSummaryDialog(CTkToplevel):
             row = CTkFrame(parent, fg_color="transparent")
             row.pack(fill="x", pady=(0, 4))
             row.grid_columnconfigure(1, weight=1)
-            CTkLabel(row, text=label, font=("Arial", 14), text_color="#d0d0d0").grid(row=0, column=0, sticky="w")
-            CTkLabel(row, text=value, font=("Arial", 14, "bold"), text_color="#ffffff").grid(row=0, column=1, sticky="e")
+            CTkLabel(row, text=label, font=("Roboto", 14), text_color="#d0d0d0").grid(row=0, column=0, sticky="w")
+            CTkLabel(row, text=value, font=("Roboto", 14, "bold"), text_color="#ffffff").grid(row=0, column=1, sticky="e")
 
         def create_issue_row(parent, label, value):
             row = CTkFrame(parent, fg_color="transparent")
             row.pack(fill="x", pady=(0, 4))
             row.grid_columnconfigure(1, weight=1)
-            CTkLabel(row, text=label, font=("Arial", 14), text_color="#d0d0d0").grid(row=0, column=0, sticky="w")
+            CTkLabel(row, text=label, font=("Roboto", 14), text_color="#d0d0d0").grid(row=0, column=0, sticky="w")
 
             numeric_value = None
             if value is not None:
@@ -160,7 +160,7 @@ class SessionSummaryDialog(CTkToplevel):
             display_value = f"{numeric_value:,}" if numeric_value is not None else ("N/A" if value is None else str(value))
             value_color = "#ef4444" if is_warning else "#f8fafc"
 
-            CTkLabel(row, text=display_value, font=("Arial", 16, "bold"), text_color=value_color).grid(row=0, column=1, sticky="e")
+            CTkLabel(row, text=display_value, font=("Roboto", 16, "bold"), text_color=value_color).grid(row=0, column=1, sticky="e")
 
 
         # --- Card 1: Overview ---
@@ -180,7 +180,7 @@ class SessionSummaryDialog(CTkToplevel):
         except Exception as e:
             print(f"Warning: Could not load 'location_home.png' icon: {e}")
 
-        CTkLabel(title_frame_1, text="Overview", font=("Arial", 16, "bold")).grid(row=0, column=1, pady=8)
+        CTkLabel(title_frame_1, text="Overview", font=("Roboto", 16, "bold")).grid(row=0, column=1, pady=8)
         overview_content = CTkFrame(overview_card, fg_color="transparent")
         overview_content.pack(fill="both", expand=True, padx=12, pady=(10, 14))
 
@@ -207,7 +207,7 @@ class SessionSummaryDialog(CTkToplevel):
         except Exception as e:
             print(f"Warning: Could not load 'bar_chart.png' icon: {e}")
 
-        CTkLabel(title_frame_2, text="Attendance Rate", font=("Arial", 16, "bold")).grid(row=0, column=1, pady=8)
+        CTkLabel(title_frame_2, text="Attendance Rate", font=("Roboto", 16, "bold")).grid(row=0, column=1, pady=8)
         rate_content = CTkFrame(rate_card, fg_color="transparent")
         rate_content.pack(fill="both", expand=True, padx=12, pady=10)
 
@@ -231,7 +231,7 @@ class SessionSummaryDialog(CTkToplevel):
                 track_width=8,
                 progress_color=progress_color,
                 track_color="#4b5563",
-                text_font=("Arial", 22, "bold")
+                text_font=("Roboto", 22, "bold")
             )
             progress_bar.pack(expand=True, pady=(5, 0))
             progress_bar.set_value(rate_value)
@@ -252,7 +252,7 @@ class SessionSummaryDialog(CTkToplevel):
         except Exception as e:
             print(f"Warning: Could not load 'shield_person.png' icon: {e}")
 
-        CTkLabel(title_frame_3, text="Issues & Flags", font=("Arial", 16, "bold")).grid(row=0, column=1, pady=8)
+        CTkLabel(title_frame_3, text="Issues & Flags", font=("Roboto", 16, "bold")).grid(row=0, column=1, pady=8)
         issues_content = CTkFrame(issues_card, fg_color="transparent")
         issues_content.pack(fill="both", expand=True, padx=12, pady=(10, 14))
 
@@ -281,4 +281,3 @@ class SessionSummaryDialog(CTkToplevel):
             pass
         if self.winfo_exists():
             self.destroy()
-

@@ -20,7 +20,7 @@ class PastSessionsWindow(CTkToplevel):
         header = CTkLabel(
             self,
             text="Past Sessions",
-            font=("Arial", 20, "bold")
+            font=("Roboto", 20, "bold")
         )
         header.pack(anchor="w", padx=24, pady=(24, 12))
 
@@ -46,7 +46,7 @@ class PastSessionsWindow(CTkToplevel):
         self.empty_label = CTkLabel(
             container,
             text="No session files found.",
-            font=("Arial", 14)
+            font=("Roboto", 14)
         )
         self.empty_label.place_forget()
 

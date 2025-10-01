@@ -42,14 +42,14 @@ class AddStudentDialog(CTkToplevel):
             print("Warning: 'assets/person_add.png' not found. Skipping icon.")
 
         subtitle_text = "Link a scanned card to a student profile." if self.card_id else "Create a manual record for a student."
-        subtitle_label = CTkLabel(header_frame, text=subtitle_text, font=("Arial", 16))
+        subtitle_label = CTkLabel(header_frame, text=subtitle_text, font=("Roboto", 16))
         subtitle_label.grid(row=1, column=0)
         
         if self.card_id:
             CTkLabel(
                 header_frame,
                 text=f"Card ID: {self.card_id}",
-                font=("Arial", 12, "bold"),
+                font=("Roboto", 12, "bold"),
                 text_color="#1f6aa5"
             ).grid(row=2, column=0, pady=(12, 0))
 
@@ -67,7 +67,7 @@ class AddStudentDialog(CTkToplevel):
         
         # Create fields with top-aligned labels
         for i, (key, label_text, placeholder) in enumerate(field_specs):
-            label = CTkLabel(form, text=label_text, font=("Arial", 13, "bold"))
+            label = CTkLabel(form, text=label_text, font=("Roboto", 13, "bold"))
             label.grid(row=i*2, column=0, sticky="w", pady=(10 if i > 0 else 0, 4))
             
             entry = CTkEntry(form, placeholder_text=placeholder, height=36) # Slightly taller entry
@@ -79,7 +79,7 @@ class AddStudentDialog(CTkToplevel):
         self.feedback_label = CTkLabel(
             container,
             textvariable=self.feedback_var,
-            font=("Arial", 12),
+            font=("Roboto", 12),
             text_color="#d64b4b",
             wraplength=350 # Prevent feedback from making window too wide
         )

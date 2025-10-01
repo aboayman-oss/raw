@@ -56,6 +56,13 @@ def _format_arabic_text(text):
     
     return _process_arabic(text_str)
 
+def get_font_for_text(text):
+    """Returns 'Noto Sans Arabic' if text contains Arabic, otherwise 'Roboto'."""
+    text_str = str(text)
+    if any('\u0600' <= char <= '\u06FF' for char in text_str):
+        return "Noto Sans Arabic"
+    return "Roboto"
+
 # --- Constants for the new Focus View Design ---
 ASSETS_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "assets")
 
@@ -212,7 +219,7 @@ class ScanWindow(CTkToplevel):
         # Top bar with X button
         top_bar = CTkFrame(panel, fg_color="transparent")
         top_bar.pack(fill="x", padx=0, pady=(0,0))
-        CTkLabel(top_bar, text="Filters", font=("Arial", 14, "bold"), anchor="w").pack(side="left", padx=(12,0), pady=(10,0))
+        CTkLabel(top_bar, text="Filters", font=("Roboto", 14, "bold"), anchor="w").pack(side="left", padx=(12,0), pady=(10,0))
         x_icon = self._load_icon("close.png", size=(20, 20))
         dismiss_btn = CTkButton(top_bar, text="", image=x_icon, width=32, height=32, fg_color="transparent", command=self._hide_filter_panel)
         dismiss_btn.pack(side="right", padx=(0,8), pady=(10,0))
@@ -225,7 +232,7 @@ class ScanWindow(CTkToplevel):
             ctk.CTkRadioButton(att_frame, text=label, variable=self._filter_vars["attendance"], value=val, command=self._on_filter_change).pack(side="left", padx=(0,12))
 
         # Task Status (Checkboxes)
-        CTkLabel(panel, text="Task Status", font=("Arial", 12, "bold"), anchor="w").pack(anchor="w", padx=12, pady=(6,0))
+        CTkLabel(panel, text="Task Status", font=("Roboto", 12, "bold"), anchor="w").pack(anchor="w", padx=12, pady=(6,0))
         task_frame = CTkFrame(panel, fg_color="transparent")
         task_frame.pack(fill="x", padx=12, pady=(0,4))
         task_frame.grid_columnconfigure((0, 1), weight=1)
@@ -255,7 +262,7 @@ class ScanWindow(CTkToplevel):
         ).pack(anchor="w")
 
         # Other Criteria (Checkboxes)
-        CTkLabel(panel, text="Other Criteria", font=("Arial", 12, "bold"), anchor="w").pack(anchor="w", padx=12, pady=(6,0))
+        CTkLabel(panel, text="Other Criteria", font=("Roboto", 12, "bold"), anchor="w").pack(anchor="w", padx=12, pady=(0,4))
         other_frame = CTkFrame(panel, fg_color="transparent")
         other_frame.pack(anchor="w", padx=12, pady=(0,4))
         ctk.CTkCheckBox(other_frame, text="Has Notes", variable=self._filter_vars["has_notes"], command=self._on_filter_change).pack(side="left", padx=(0,12))
@@ -349,8 +356,10 @@ class ScanWindow(CTkToplevel):
         frame = CTkFrame(modal, fg_color=DARK_SURFACE, corner_radius=16)
         frame.pack(fill="both", expand=True, padx=18, pady=18)
 
-        CTkLabel(frame, text=f"Edit Notes for {student_name}", font=("Arial", 15, "bold"), anchor="w").pack(anchor="w", pady=(0,8))
-        notes_box = CTkTextbox(frame, width=360, height=90, font=("Arial", 13), corner_radius=10)
+        formatted_name = _format_arabic_text(student_name)
+        font_family = get_font_for_text(student_name)
+        CTkLabel(frame, text=f"Edit Notes for {formatted_name}", font=(font_family, 15, "bold"), anchor="w").pack(anchor="w", pady=(0,8))
+        notes_box = CTkTextbox(frame, width=360, height=90, font=("Roboto", 13), corner_radius=10)
         notes_box.pack(fill="x", pady=(0,12))
         notes_box.insert("1.0", current_notes)
 
@@ -361,7 +370,7 @@ class ScanWindow(CTkToplevel):
             self._refresh_stats()
             modal.destroy()
 
-        save_btn = CTkButton(frame, text="Save", fg_color="#a9c8e7", text_color="#232a36", font=("Arial", 13, "bold"), command=save_notes, width=120, height=38)
+        save_btn = CTkButton(frame, text="Save", fg_color="#a9c8e7", text_color="#232a36", font=("Roboto", 13, "bold"), command=save_notes, width=120, height=38)
         save_btn.pack(side="right", pady=(8,0))
 
         # Focus for quick editing
@@ -460,6 +469,7 @@ class ScanWindow(CTkToplevel):
         # Populate UI elements
         self.focus_view.name_label.configure(text=ctx.get("name") or "Unknown Student")
         student_name = ctx.get("name") or "Unknown Student"
+        self.focus_view.name_label.configure(font=(get_font_for_text(student_name), 32, "bold"))
         formatted_name = _format_arabic_text(student_name)
         self.focus_view.name_label.configure(text=formatted_name)
         card_display_val = ctx.get('card_display', '') or ''
@@ -672,7 +682,7 @@ class ScanWindow(CTkToplevel):
             fg_color="#c04040",      # A more prominent red color
             hover_color="#a03030",   # A darker red for hover
             text_color="#ffffff",
-            font=("Arial", 14, "bold"),
+            font=("Roboto", 14, "bold"),
             image=logout_icon,
             compound="right"
         )
@@ -1145,7 +1155,7 @@ class ScanWindow(CTkToplevel):
             card_inner = CTkFrame(card_frame, fg_color="transparent")
             card_inner.pack(expand=True, fill="both")
 
-            CTkLabel(card_inner, text=card["label"], font=("Arial", 12, "bold"), text_color="#cac4d0", anchor="center", justify="center").pack(side="top", anchor="center", pady=(6, 0))
+            CTkLabel(card_inner, text=card["label"], font=("Roboto", 12, "bold"), text_color="#cac4d0", anchor="center", justify="center").pack(side="top", anchor="center", pady=(6, 0))
 
             icon_num_frame = CTkFrame(card_inner, fg_color="transparent")
             icon_num_frame.pack(side="top", anchor="center", pady=(0, 0), expand=True)
@@ -1162,17 +1172,17 @@ class ScanWindow(CTkToplevel):
                 progress = CTkProgressBar(icon_num_frame, width=40, height=6)
                 progress.set(percent_val)
                 progress.pack(side="left", anchor="center", padx=(0, 4))
-                CTkLabel(icon_num_frame, textvariable=self.stats_vars["percent"], font=("Arial", 18, "bold"), text_color="#a9c8e7", anchor="center", justify="center").pack(side="left", anchor="center", padx=(0, 0))
+                CTkLabel(icon_num_frame, textvariable=self.stats_vars["percent"], font=("Roboto", 18, "bold"), text_color="#a9c8e7", anchor="center", justify="center").pack(side="left", anchor="center", padx=(0, 0))
             else:
-                CTkLabel(icon_num_frame, textvariable=card["var"], font=("Arial", 20, "bold"), text_color="#e3e2e6", anchor="center", justify="center").pack(side="left", anchor="center", padx=(0, 0))
+                CTkLabel(icon_num_frame, textvariable=card["var"], font=("Roboto", 20, "bold"), text_color="#e3e2e6", anchor="center", justify="center").pack(side="left", anchor="center", padx=(0, 0))
 
     def _apply_treeview_style(self):
         style = ttk.Style(self)
         style.theme_use("default")
         bg, fg, heading_bg, heading_fg = ("#1e1e1e", "#f2f2f2", "#1f6aa5", "#ffffff")
-        style.configure("Treeview", background=bg, foreground=fg, fieldbackground=bg, rowheight=32, font=("Arial", 11))
+        style.configure("Treeview", background=bg, foreground=fg, fieldbackground=bg, rowheight=32, font=("Roboto", 11))
         style.map("Treeview", background=[("selected", "#1f6aa5")], foreground=[("selected", "#ffffff")])
-        style.configure("Treeview.Heading", background=heading_bg, foreground=heading_fg, font=("Arial", 11, "bold") )
+        style.configure("Treeview.Heading", background=heading_bg, foreground=heading_fg, font=("Roboto", 11, "bold") )
         style.map("Treeview.Heading", background=[("active", heading_bg)])
         self.tree.configure(style="Treeview")
 

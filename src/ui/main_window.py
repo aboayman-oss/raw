@@ -134,7 +134,7 @@ class App(CTk):
             self,
             textvariable=self.status_var,
             anchor="w",
-            font=("Arial", 12)
+            font=("Roboto", 12)
         )
         self.status_label.grid(row=1, column=1, sticky="ew", padx=20, pady=(0, 10))
 
@@ -179,12 +179,12 @@ class App(CTk):
         CTkLabel(
             title_holder,
             text="Attendance Manager",
-            font=("Arial", 24, "bold")
+            font=("Roboto", 24, "bold")
         ).pack(anchor="w")
         CTkLabel(
             title_holder,
             text="Powered by Gawish",
-            font=("Arial", 14)
+            font=("Roboto", 14)
         ).pack(anchor="w", pady=(4, 0))
 
     def _build_start_session_card(self, parent):
@@ -192,7 +192,7 @@ class App(CTk):
         self.start_card.grid(row=1, column=0, sticky="ew", pady=(20, 20))
         self.start_card.grid_columnconfigure(1, weight=1)
 
-        self.start_card_title = ctk.CTkLabel(self.start_card, text="Start a New Session", font=("Arial", 18, "bold"), anchor="w")
+        self.start_card_title = ctk.CTkLabel(self.start_card, text="Start a New Session", font=("Roboto", 18, "bold"), anchor="w")
         self.start_card_title.grid(row=0, column=0, columnspan=2, sticky="ew", padx=20, pady=(20, 4))
 
         self.start_card_subtitle = ctk.CTkLabel(self.start_card, text="Import a student list to begin.", anchor="w")
@@ -204,7 +204,7 @@ class App(CTk):
             image=self.new_session_icon,
             compound="right",
             command=self.open_scan_window_setup,
-            font=("Arial", 14, "bold"),
+            font=("Roboto", 14, "bold"),
             height=40
         )
         self.start_session_btn.grid(row=2, column=1, sticky="e", padx=20, pady=(0, 20))
@@ -226,7 +226,7 @@ class App(CTk):
         recent_card.grid_columnconfigure(0, weight=1)
         recent_card.grid_rowconfigure(1, weight=1)
 
-        title = ctk.CTkLabel(recent_card, text="Recent Sessions", font=("Arial", 16, "bold"), anchor="w")
+        title = ctk.CTkLabel(recent_card, text="Recent Sessions", font=("Roboto", 16, "bold"), anchor="w")
         title.grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 10))
 
         self.recent_sessions_frame = ctk.CTkScrollableFrame(recent_card, fg_color="transparent")
@@ -503,7 +503,7 @@ class App(CTk):
         header_frame.grid(row=0, column=0, sticky="ew", pady=(0, 12))
         header_frame.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(header_frame, text="Past Sessions", font=("Arial", 24, "bold")).grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(header_frame, text="Past Sessions", font=("Roboto", 24, "bold")).grid(row=0, column=0, sticky="w")
 
         action_buttons_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
         action_buttons_frame.grid(row=0, column=1, sticky="e")
