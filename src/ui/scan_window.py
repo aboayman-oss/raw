@@ -134,7 +134,8 @@ class ScanWindow(CTkToplevel):
         self.state('zoomed')
         self.bind("<F11>", self.toggle_fullscreen)
         self.bind("<Escape>", self.toggle_fullscreen)
-        self.bind("<Control-s>", self._on_s_key_press)
+        # self.bind("<Control-s>", self._on_s_key_press) # Deprecated
+        self.bind("<Control-KeyPress>", self._on_ctrl_keypress)
         self.restrictions = self.sm.restrictions
         self.df = read_data(self.sm.session_path).fillna("")
         self.mapping = self.sm.mapping or {col: col for col in self.df.columns}
@@ -389,14 +390,6 @@ class ScanWindow(CTkToplevel):
     def toggle_fullscreen(self, event=None):
         self.attributes("-fullscreen", not self.attributes("-fullscreen"))
 
-    def _on_s_key_press(self, event):
-        """Handler for Ctrl+S key press to focus the scan entry."""
-        # Check if focus is already in a text entry field to avoid interruption
-        focused_widget = self.focus_get()
-        if isinstance(focused_widget, (CTkEntry, CTkTextbox)):
-            return  # Don't steal focus if the user is typing
-        
-        self.scan_entry.focus_set()
 
     # --------------------------------------------------------------------------
     # Redesigned Focus View (Material 3 Style)
@@ -439,6 +432,39 @@ class ScanWindow(CTkToplevel):
             on_dismiss=self.scan_focus_clear
         )
 
+        # Bind Arabic-specific shortcuts to the notes widget
+        # Ctrl+ش (Arabic for 'A') should trigger "Select All"
+        self.focus_view.notes.bind("<Control-KeyPress>", self._on_notes_ctrl_keypress)
+
+    def _on_ctrl_keypress(self, event):
+        """Handles global Ctrl key-presses for cross-language compatibility."""
+        # For Ctrl+S (focus scan entry) - Arabic 'س'
+        if event.char.lower() in ('s', 'س'):
+            focused_widget = self.focus_get()
+            if isinstance(focused_widget, (CTkEntry, CTkTextbox)):
+                return  # Don't steal focus if the user is typing
+            self.scan_entry.focus_set()
+            return "break"
+        return None
+
+    def _on_notes_ctrl_keypress(self, event):
+        """Handles Ctrl key-presses in the notes widget for special characters."""
+        char = event.char.lower()
+        widget = event.widget
+
+        # Select All: Ctrl+A (English) or Ctrl+ش (Arabic)
+        if char in ('a', 'ش'):
+            self.focus_view.notes._textbox.tag_add("sel", "1.0", "end")
+            return "break"  # Prevents the character from being inserted
+        # Copy: Ctrl+C (English) or Ctrl+ؤ (Arabic)
+        elif char in ('c', 'ؤ'):
+            widget.event_generate("<<Copy>>")
+            return "break"
+        # Paste: Ctrl+V (English) or Ctrl+ر (Arabic)
+        elif char in ('v', 'ر'):
+            widget.event_generate("<<Paste>>")
+            return "break"
+        
     def _on_notes_focus_in(self, event):
         self._pause_focus_guard()
         if self.focus_view.notes.get("1.0", "end-1c") == "Add notes here...":
@@ -483,10 +509,14 @@ class ScanWindow(CTkToplevel):
         if not self.read_only: self.focus_view.notes.configure(state="normal")
         self.focus_view.notes.delete("1.0", "end")
         existing_notes = ctx.get("existing_notes", "")
-        if existing_notes:
-            self.focus_view.notes.insert("1.0", existing_notes)
+        if existing_notes: # Display existing notes
+            formatted_notes = _format_arabic_text(existing_notes)
+            self.focus_view.notes.insert("1.0", formatted_notes)
             self.focus_view.notes.configure(text_color=DARK_PRIMARY_TEXT)
+            if any('\u0600' <= char <= '\u06FF' for char in str(existing_notes)):
+                self.focus_view.notes._textbox.tag_add("rtl", "1.0", "end")
         else:
+            self.focus_view.notes._textbox.tag_remove("rtl", "1.0", "end")
             self.focus_view.notes.configure(text_color="gray")
             self.focus_view.notes.insert("1.0", "Add notes here...")
         if self.read_only: self.focus_view.notes.configure(state="disabled")

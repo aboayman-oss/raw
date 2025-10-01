@@ -76,7 +76,12 @@ class FocusViewWindow:
         self.exam_grade_label = CTkLabel(self.exam_card, text="", font=("Roboto", 14))
         self.exam_grade_label.grid(row=0, column=2, sticky="e", padx=12)
 
-        self.notes = CTkTextbox(details_zone, corner_radius=12, border_width=0, font=("Roboto", 22, "bold"), text_color="#FFFFFF", wrap="word")
+        self.notes = CTkTextbox(
+            details_zone, corner_radius=12, border_width=0, 
+            font=("Noto Sans Arabic", 16),  # Use a font that supports Arabic well
+            text_color="#FFFFFF", wrap="word"
+        )
+        self.notes._textbox.tag_configure("rtl", justify="right")
         self.notes.pack(fill="both", expand=True, pady=(12, 0))
         self.notes.insert("1.0", "Add notes here...")
         self.notes.bind("<FocusIn>", self._on_notes_focus_in)
@@ -120,5 +125,7 @@ class FocusViewWindow:
 
     def _on_notes_focus_out(self, event):
         if not self.notes.get("1.0", "end-1c"):
+            # Remove justification for placeholder
+            self.notes._textbox.tag_remove("rtl", "1.0", "end")
             self.notes.configure(text_color="gray")
             self.notes.insert("1.0", "Add notes here...")
