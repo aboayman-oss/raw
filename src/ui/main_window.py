@@ -513,9 +513,13 @@ class App(CTk):
         # Removed Clear All button
 
         # Scrollable frame for the list
-        self.sessions_list_frame = ctk.CTkScrollableFrame(frame, label_text="Session Files")
-        self.sessions_list_frame.grid(row=1, column=0, sticky="nsew")
-        self.sessions_list_frame.grid_columnconfigure(0, weight=1)
+        sessions_container = ctk.CTkFrame(frame, fg_color="transparent")
+        sessions_container.grid(row=1, column=0, sticky="nsew")
+        sessions_container.grid_rowconfigure(0, weight=1)
+        sessions_container.grid_columnconfigure(0, weight=1)
+
+        self.sessions_list_frame = ctk.CTkScrollableFrame(sessions_container, label_text="Session Files")
+        self.sessions_list_frame.pack(fill="both", expand=True)
 
         # Populate the list with session data
         self._populate_past_sessions_list(force_scan=True)
