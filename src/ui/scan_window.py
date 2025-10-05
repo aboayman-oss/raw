@@ -14,6 +14,7 @@ from customtkinter import CTkButton, CTkEntry, CTkFrame, CTkLabel, CTkProgressBa
 from PIL import Image
 
 from ui.dialogs.add_student_dialog import AddStudentDialog
+from ui.dialogs.confirmation_dialog import ConfirmationDialog
 from utils.helpers import (
     HOME_BG_FILE,
     MIN_SCAN_SIZE,
@@ -329,64 +330,6 @@ class ScanWindow(CTkToplevel):
         icon_name = "filter.png" if not self._filter_active else "filter_filled.png"
         self.filter_button.configure(image=self._load_icon(icon_name, size=(28, 28)))
 
-    # --------------------------------------------------------------------------
-    # Modern: Edit Notes Modal on Treeview Right-Click
-    # --------------------------------------------------------------------------
-    def _on_tree_right_click(self, event):
-        # Get row under mouse
-        iid = self.tree.identify_row(event.y)
-        if not iid:
-            return
-        # Open modal dialog for editing notes
-        self._open_edit_notes_modal(iid)
-
-    def _open_edit_notes_modal(self, iid):
-        # Get current notes
-        current_notes = self.tree.set(iid, "notes")
-        student_name = self.tree.set(iid, "name") or "Student"
-        modal = CTkToplevel(self)
-        set_dark_title_bar(modal)
-        modal.title(f"Edit Notes - {student_name}")
-        modal.geometry("420x260")
-        modal.transient(self)
-        modal.grab_set()
-        modal.resizable(False, False)
-        modal.attributes("-topmost", True)
-
-        # Modal styling
-        frame = CTkFrame(modal, fg_color=DARK_SURFACE, corner_radius=16)
-        frame.pack(fill="both", expand=True, padx=18, pady=18)
-
-        formatted_name = _format_arabic_text(student_name)
-        font_family = get_font_for_text(student_name)
-        CTkLabel(frame, text=f"Edit Notes for {formatted_name}", font=(font_family, 15, "bold"), anchor="w").pack(anchor="w", pady=(0,8))
-        notes_box = CTkTextbox(frame, width=360, height=90, font=("Roboto", 13), corner_radius=10)
-        notes_box.pack(fill="x", pady=(0,12))
-        notes_box.insert("1.0", current_notes)
-
-        # Save button
-        def save_notes():
-            new_notes = notes_box.get("1.0", "end-1c")
-            self._update_row(iid, self.tree.set(iid, "attendance"), new_notes, self.tree.set(iid, "timestamp"))
-            self._refresh_stats()
-            modal.destroy()
-
-        save_btn = CTkButton(frame, text="Save", fg_color="#a9c8e7", text_color="#232a36", font=("Roboto", 13, "bold"), command=save_notes, width=120, height=38)
-        save_btn.pack(side="right", pady=(8,0))
-
-        # Focus for quick editing
-        notes_box.focus_set()
-
-        # Allow closing with Escape
-        modal.bind("<Escape>", lambda e: modal.destroy())
-
-    def _bind_tree_right_click(self):
-        # Bind right-click to treeview for notes editing
-        self.tree.bind("<Button-3>", self._on_tree_right_click)
-
-
-    
-
     def toggle_fullscreen(self, event=None):
         self.attributes("-fullscreen", not self.attributes("-fullscreen"))
 
@@ -427,9 +370,10 @@ class ScanWindow(CTkToplevel):
             on_complete=self.scan_focus_on_completed,
             on_add_student=self.scan_focus_on_add_student,
             on_override=self.scan_focus_on_override,
+            on_save_notes=self._handle_notes_save,
             on_deny=self.scan_focus_on_deny,
             on_cancel=self.scan_focus_on_cancel_attendance,
-            on_dismiss=self.scan_focus_clear
+            on_dismiss=self._handle_focus_dismiss_request
         )
 
         # Bind Arabic-specific shortcuts to the notes widget
@@ -776,8 +720,6 @@ class ScanWindow(CTkToplevel):
         self.tree.bind("<Return>", self._on_tree_enter)
         self.tree.bind("<Up>", self._on_tree_up_down)
         self.tree.bind("<Down>", self._on_tree_up_down)
-        # Modern: Bind right-click for notes editing
-        self._bind_tree_right_click()
 
         # --- Column Sorting ---
         self._tree_sort_column = None
@@ -1069,18 +1011,104 @@ class ScanWindow(CTkToplevel):
     def scan_on_open_row(self, iid, *, source="manual", card_id=None):
         if self.read_only or not self.tree.exists(iid): return
         
+        # --- START: MODIFIED LOGIC ---
         context = self.scan_build_context_for_iid(iid, source=source)
         if card_id: context["card_id"] = context["card_display"] = card_id
         
-        # --- Prevent duplicate attendance ---
+        # If the student has already attended, show the focus view to allow
+        # for note editing or potential attendance cancellation.
         if context.get("already_attended"):
-            self.scan_focus_show(context) # Show the focus window with the duplicate status
+            self.scan_focus_show(context)
             return
-        
-        self.scan_focus_show(context)
-        
-        if context["status"] == "ok" and not context.get("already_attended"):
+
+        # If it's a new scan and everything is okay, auto-attend.
+        # But if the user just double-clicked the row (source='manual'), just show the info.
+        if source == "scan" and context["status"] == "ok":
             self.scan_handle_auto_attend(context)
+        else:
+            # For all other cases (missing tasks, manual click), just show the focus view.
+            self.scan_focus_show(context)
+        # --- END: MODIFIED LOGIC ---
+
+    def _notes_have_changed(self):
+        """Checks if the notes in the focus view have been modified."""
+        if not self.scan_focus_ctx or not self.scan_focus_ctx.get("iid"):
+            return False # No student in focus
+
+        new_note_content = self.focus_view.notes.get("1.0", "end-1c").strip()
+        original_notes = self.scan_focus_ctx.get("original_notes", "").strip()
+
+        # Normalize whitespace for a more reliable comparison
+        return new_note_content.replace('\r\n', '\n') != original_notes.replace('\r\n', '\n')
+
+    def _handle_focus_dismiss_request(self):
+        """Handles the request to close the focus view, checking for unsaved notes."""
+        if self._notes_have_changed():
+            dialog = ConfirmationDialog(
+                self,
+                title="Unsaved Changes",
+                message="You have unsaved changes in the notes. Do you want to save them?",
+                confirm_text="Save",
+                cancel_text="Dismiss"
+            )
+            result = dialog.get_result()
+
+            if result is True:  # User clicked "Save"
+                self._handle_notes_save()
+            elif result is None: # Dialog was closed without a choice
+                return # Do nothing, keep the focus view open
+
+        # Dismiss the view if notes were saved, "Dismiss" was clicked, or no changes existed
+        self.scan_focus_clear()
+
+    # --- START: NEW SAVE HANDLER METHODS ---
+
+    def _handle_notes_save(self):
+        """Called when the notes box loses focus. Saves changes if any were made."""
+        if not self.scan_focus_ctx or not self.scan_focus_ctx.get("iid"):
+            return # No student is in focus, nothing to save.
+
+        iid = self.scan_focus_ctx.get("iid")
+
+        new_note_content = self.focus_view.notes.get("1.0", "end-1c").strip()
+        original_notes = self.scan_focus_ctx.get("original_notes", "").strip()
+
+        # Normalize whitespace for a more reliable comparison to prevent saving unchanged notes
+        if new_note_content.replace('\r\n', '\n') == original_notes.replace('\r\n', '\n'):
+            return # No changes were made
+
+        # If notes have changed, save them.
+        self._save_student_notes(iid, new_note_content)
+
+    def _save_student_notes(self, iid, new_notes):
+        """Saves only the notes for a student without changing their attendance status."""
+        if self.read_only or not self.tree.exists(iid):
+            return
+
+        # Get current attendance and timestamp to preserve them
+        current_attendance = self.scan_tree_get(iid, "attendance")
+        current_timestamp = self.scan_tree_get(iid, "timestamp")
+
+        # Build the record payload to be saved to the session file
+        rec = self._build_record_payload(iid, current_attendance, new_notes, current_timestamp)
+        try:
+            self.sm.add_record(rec)
+        except Exception as exc:
+            messagebox.showwarning("Update Failed", f"Could not save notes: {exc}", parent=self)
+            return
+
+        # Update the Treeview UI
+        self.tree.set(iid, "notes", self._clean_value(new_notes))
+
+        # Update the context's original_notes so we don't try to save again on the next blur
+        if self.scan_focus_ctx:
+            self.scan_focus_ctx["original_notes"] = new_notes
+
+        # Provide visual feedback to the user and refresh stats
+        self.focus_view.show_save_feedback()
+        self._refresh_stats()
+
+    # --- END: NEW SAVE HANDLER METHODS ---
 
     def scan_handle_auto_attend(self, context):
         if not context: return
