@@ -79,27 +79,38 @@ class FocusViewWindow:
         self.exam_grade_label = CTkLabel(self.exam_card, text="", font=("Roboto", 14))
         self.exam_grade_label.grid(row=0, column=2, sticky="e", padx=12)
 
-        # --- START: NOTES CONTAINER WITH SAVE BUTTON ---
+        # --- START: NOTES CONTAINER WITH HEADER BAR ---
         notes_container = CTkFrame(details_zone, fg_color="transparent")
         notes_container.pack(fill="both", expand=True, pady=(12, 0))
+        notes_container.grid_rowconfigure(1, weight=1)
+        notes_container.grid_columnconfigure(0, weight=1)
 
-        self.notes = CTkTextbox(
-            notes_container, corner_radius=12, border_width=0,
-            font=("Noto Sans Arabic", 16),  # Use a font that supports Arabic well
-            text_color="#FFFFFF", wrap="word"
-        )
-        self.notes._textbox.tag_configure("rtl", justify="right")
-        self.notes.pack(fill="both", expand=True)
-        self.notes.insert("1.0", "Add notes here...")
+        # Create a header bar for the notes section
+        notes_header = CTkFrame(notes_container, fg_color="#2b2b2b", corner_radius=12)
+        notes_header.grid(row=0, column=0, sticky="ew", pady=(0, 2))
+        notes_header.grid_columnconfigure(0, weight=1)
+
+        CTkLabel(notes_header, text="Notes", font=("Roboto", 14, "bold"), anchor="w").grid(row=0, column=0, sticky="w", padx=12, pady=8)
 
         save_icon = self._load_icon("save.png", size=(20, 20))
         self.btn_save_notes = CTkButton(
-            notes_container, text="", image=save_icon, width=32, height=32,
-            fg_color="transparent", hover_color="#363a45",
-            command=self._on_save_notes
+            notes_header,
+            text="Save",
+            image=save_icon,
+            command=self._on_save_notes,
+            compound="left",
+            height=32
         )
-        self.btn_save_notes.place(relx=1.0, rely=0, x=-8, y=8, anchor="ne")
-        # --- END: NOTES CONTAINER WITH SAVE BUTTON ---
+        self.btn_save_notes.grid(row=0, column=1, sticky="e", padx=8, pady=8)
+
+        self.notes = CTkTextbox(
+            notes_container, corner_radius=12, border_width=0, font=("Noto Sans Arabic", 16),
+            text_color="#FFFFFF", wrap="word"
+        )
+        self.notes._textbox.tag_configure("rtl", justify="right")
+        self.notes.grid(row=1, column=0, sticky="nsew")
+        self.notes.insert("1.0", "Add notes here...")
+        # --- END: NOTES CONTAINER WITH HEADER BAR ---
 
         self.notes.bind("<FocusIn>", self._on_notes_focus_in)
         self.notes.bind("<FocusOut>", self._on_notes_focus_out)
