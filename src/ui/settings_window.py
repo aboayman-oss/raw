@@ -26,6 +26,7 @@ from utils.helpers import (
     SETTINGS_FILE,
     bring_window_to_front,
     ensure_initial_size,
+    set_dark_title_bar,
 )
 
 # Import read_data from its module
@@ -36,6 +37,7 @@ class SettingsWindow(CTkToplevel):
 
     def __init__(self, parent):
         super().__init__(parent)
+        set_dark_title_bar(self)
         self.title("Settings")
         self.minsize(*MIN_SETTINGS_SIZE)
 
@@ -206,12 +208,8 @@ class SettingsWindow(CTkToplevel):
         self.apply_button.configure(state=state)
 
     def _build_stage_tab(self):
-        mode = ctk.get_appearance_mode()
-        if mode == "Dark":
-            list_bg, list_fg = "#1f1f1f", "#f2f2f2"
-        else:
-            list_bg, list_fg = "#ffffff", "#1a1a1a"
-        select_bg, select_fg = "#1f6aa5", "#ffffff"
+        list_bg, list_fg = "#1f1f1f", "#f2f2f2"
+        select_bg, select_fg = "#1f6aa5", "#ffffff" # These are already dark-theme friendly
 
         CTkLabel(
             self.stage_tab,
