@@ -1035,7 +1035,8 @@ class ScanWindow(CTkToplevel):
         if not self.scan_focus_ctx or not self.scan_focus_ctx.get("iid"):
             return False # No student in focus
 
-        new_note_content = self.focus_view.notes.get("1.0", "end-1c").strip()
+        raw_note_content = self.focus_view.notes.get("1.0", "end-1c").strip()
+        new_note_content = "" if raw_note_content == "Add notes here..." else raw_note_content
         original_notes = self.scan_focus_ctx.get("original_notes", "").strip()
 
         # Normalize whitespace for a more reliable comparison
@@ -1070,13 +1071,14 @@ class ScanWindow(CTkToplevel):
 
         iid = self.scan_focus_ctx.get("iid")
 
-        new_note_content = self.focus_view.notes.get("1.0", "end-1c").strip()
+        raw_note_content = self.focus_view.notes.get("1.0", "end-1c").strip()
+        new_note_content = "" if raw_note_content == "Add notes here..." else raw_note_content
         original_notes = self.scan_focus_ctx.get("original_notes", "").strip()
 
         # Normalize whitespace for a more reliable comparison to prevent saving unchanged notes
         if new_note_content.replace('\r\n', '\n') == original_notes.replace('\r\n', '\n'):
             return # No changes were made
-
+        
         # If notes have changed, save them.
         self._save_student_notes(iid, new_note_content)
 

@@ -157,12 +157,14 @@ class FocusViewWindow:
             self.notes.configure(text_color="#FFFFFF")
 
     def _on_notes_focus_out(self, event):
+        # First, trigger the save action if the callback exists
+        if self._on_save_notes:
+            self._on_save_notes()
         # Then, handle the placeholder text logic
         if not self.notes.get("1.0", "end-1c"):
             self.notes._textbox.tag_remove("rtl", "1.0", "end")
             self.notes.configure(text_color="gray")
             self.notes.insert("1.0", "Add notes here...")
-        # --- END: MODIFIED METHOD ---
 
     def show_save_feedback(self):
         # --- START: NEW METHOD ---
