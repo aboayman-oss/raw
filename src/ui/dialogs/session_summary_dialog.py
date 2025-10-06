@@ -75,12 +75,13 @@ class CircularProgressBar(CTkFrame):
             draw.arc(bbox, start=-90, end=end_angle, fill=self.progress_color, width=scaled_progress_width)
 
         text_str = f"{self.value:.1f}%"
-        text_bbox = draw.textbbox((0, 0), text_str, font=self.font)
-        text_width = text_bbox[2] - text_bbox[0]
-        text_height = text_bbox[3] - text_bbox[1]
+        # Use font.getbbox() for more accurate text bounding box
+        left, top, right, bottom = self.font.getbbox(text_str)
+        text_width = right - left
+        text_height = bottom - top
         text_pos = (
             (scaled_size - text_width) / 2,
-            (scaled_size - text_height) / 2,
+            (scaled_size - text_height) / 2 - top, # Adjust for vertical alignment
         )
         draw.text(text_pos, text_str, font=self.font, fill=self.text_color)
 
