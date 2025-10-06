@@ -3,7 +3,7 @@ import os
 
 import pandas as pd
 
-from utils.helpers import SETTINGS, SESSIONS_FOLDER, read_data, write_data
+from utils.helpers import SETTINGS, get_sessions_folder, read_data, write_data
 
 class SessionManager:
     def __init__(self, name, params, column_map, data_df):
@@ -16,7 +16,8 @@ class SessionManager:
         # Use the correct extension based on SETTINGS
         file_type = SETTINGS.get("file_type", "csv")
         ext = "xlsx" if file_type == "xlsx" else "csv"
-        self.session_path = os.path.join(SESSIONS_FOLDER, f"{name}.{ext}")
+        sessions_dir = get_sessions_folder()
+        self.session_path = os.path.join(sessions_dir, f"{name}.{ext}")
         if os.path.exists(self.session_path):
             df = read_data(self.session_path)
             # Only keep mapped columns

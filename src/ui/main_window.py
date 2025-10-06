@@ -20,23 +20,27 @@ from ui.settings_window import SettingsWindow
 from tkinter import messagebox # Ensure this is imported for _clear_all_sessions
 from ui.components.past_session_list_item import PastSessionListItem
 from utils.helpers import (
+    DEFAULT_SESSIONS_FOLDER,
+    FOLDER_OPEN_ICON_FILE,
     LAST_DATA_FILE,
     LOGO_FILE,
     MAPPING_FILE,
     MIN_DASHBOARD_SIZE,
     SETTINGS,
     SETTINGS_FILE,
-    SESSIONS_FOLDER,
     bring_window_to_front,
     ensure_initial_size,
+    get_sessions_folder,
     read_data,
+    save_settings,
+    set_dark_title_bar,
+    set_sessions_folder,
     write_data,
     PAST_SESSIONS_ICON_FILE,
     SETTINGS_ICON_FILE,
     IMPORT_ICON_FILE,
     NEW_SESSION_ICON_FILE,
-    DASHBOARD_ICON_FILE,
-    set_dark_title_bar
+    DASHBOARD_ICON_FILE
 )
 
 class App(CTk):
@@ -63,20 +67,30 @@ class App(CTk):
         self._past_sessions_list_dirty = True
         self._session_files_cache = None
         self.logo_img = None
+        self.session_folder = None
+        self._should_prompt_session_folder = False
 
         self._load_icons()
 
         if os.path.exists(MAPPING_FILE):
-            with open(MAPPING_FILE) as f:
+            with open(MAPPING_FILE, encoding="utf-8") as f:
                 self.column_map = json.load(f)
+
+        loaded_settings = {}
         if os.path.exists(SETTINGS_FILE):
-            with open(SETTINGS_FILE) as f:
-                SETTINGS.update(json.load(f))
+            with open(SETTINGS_FILE, encoding="utf-8") as f:
+                loaded_settings = json.load(f)
+                SETTINGS.update(loaded_settings)
+        else:
+            self._should_prompt_session_folder = True
+
+        self._initialize_session_folder(loaded_settings)
 
         self._build_ui()
         width, height = ensure_initial_size(self, min_size=MIN_DASHBOARD_SIZE)
         self.minsize(width, height)
         self._load_last_data()
+        self.after(150, self._maybe_prompt_for_sessions_folder)
 
     def _create_icon(self, icon_path, size=(24, 24)):
         try:
@@ -92,6 +106,7 @@ class App(CTk):
         self.import_icon = self._create_icon(IMPORT_ICON_FILE)
         self.new_session_icon = self._create_icon(NEW_SESSION_ICON_FILE)
         self.dashboard_icon = self._create_icon(DASHBOARD_ICON_FILE)
+        self.folder_icon = self._create_icon(FOLDER_OPEN_ICON_FILE, size=(22, 22))
         if os.path.exists(LOGO_FILE):
             try:
                 logo = Image.open(LOGO_FILE)
@@ -103,6 +118,104 @@ class App(CTk):
                     self.logo_img = CTkImage(light_image=logo, dark_image=logo, size=(target_width, target_height))
             except Exception as e:
                 print(f"Warning: Could not load logo image: {e}")
+
+    def _initialize_session_folder(self, loaded_settings):
+        stored_path = loaded_settings.get("sessions_folder", SETTINGS.get("sessions_folder"))
+        if not stored_path:
+            stored_path = DEFAULT_SESSIONS_FOLDER
+        resolved = self._apply_sessions_folder(
+            stored_path,
+            persist=False,
+            refresh=False,
+            show_status=False,
+            notify_errors=False,
+        )
+        if resolved is None:
+            resolved = self._apply_sessions_folder(
+                DEFAULT_SESSIONS_FOLDER,
+                persist=False,
+                refresh=False,
+                show_status=False,
+                notify_errors=False,
+            )
+        if "sessions_folder" not in loaded_settings:
+            self._should_prompt_session_folder = True
+        if resolved is None:
+            self.session_folder = get_sessions_folder()
+
+    def _apply_sessions_folder(
+        self,
+        path,
+        *,
+        persist=True,
+        refresh=True,
+        show_status=False,
+        notify_errors=True,
+    ):
+        try:
+            resolved = set_sessions_folder(path)
+        except OSError as exc:
+            if notify_errors:
+                messagebox.showerror("Session Folder", f"Could not use the selected folder:\n{exc}", parent=self)
+            return None
+        self.session_folder = resolved
+        if persist:
+            try:
+                save_settings()
+            except OSError as exc:
+                if notify_errors:
+                    messagebox.showwarning("Preferences", f"Could not save session folder preference:\n{exc}", parent=self)
+        if refresh:
+            self._invalidate_session_files_cache()
+            if getattr(self, "recent_sessions_frame", None) is not None:
+                self._refresh_recent_sessions()
+            if getattr(self, "sessions_list_frame", None) is not None:
+                self._populate_past_sessions_list(force_scan=True)
+            if self.past_sessions_window is not None and self.past_sessions_window.winfo_exists():
+                self.past_sessions_window.refresh()
+        if show_status:
+            self.set_status(f"Session folder set to '{resolved}'.")
+        return resolved
+
+    def _maybe_prompt_for_sessions_folder(self):
+        if not self._should_prompt_session_folder:
+            return
+        initial_dir = self.session_folder or DEFAULT_SESSIONS_FOLDER
+        selected = filedialog.askdirectory(
+            parent=self,
+            title="Select Sessions Folder",
+            initialdir=initial_dir,
+        )
+        if selected:
+            resolved = self._apply_sessions_folder(selected, persist=True, show_status=True)
+            if resolved:
+                messagebox.showinfo("Session Folder Set", f"Sessions will be saved in:\n{resolved}", parent=self)
+        else:
+            messagebox.showinfo(
+                "Session Folder Required",
+                f"A sessions folder is required. The default location will be used:\n{DEFAULT_SESSIONS_FOLDER}",
+                parent=self,
+            )
+            self._apply_sessions_folder(DEFAULT_SESSIONS_FOLDER, persist=True, show_status=True)
+        self._should_prompt_session_folder = False
+
+    def _on_change_sessions_folder_clicked(self):
+        initial_dir = self.session_folder or DEFAULT_SESSIONS_FOLDER
+        selected = filedialog.askdirectory(
+            parent=self,
+            title="Select Sessions Folder",
+            initialdir=initial_dir,
+        )
+        if not selected:
+            self.set_status("Session folder selection canceled.")
+            return
+        current = os.path.abspath(self.session_folder) if self.session_folder else None
+        if current and os.path.abspath(selected) == current:
+            self.set_status("Session folder unchanged.")
+            return
+        resolved = self._apply_sessions_folder(selected, persist=True, show_status=True)
+        if resolved:
+            messagebox.showinfo("Session Folder Updated", f"Sessions will now be saved in:\n{resolved}", parent=self)
 
     def _build_ui(self):
         # 1. Configure root window grid
@@ -190,10 +303,28 @@ class App(CTk):
     def _build_start_session_card(self, parent):
         self.start_card = ctk.CTkFrame(parent, corner_radius=12)
         self.start_card.grid(row=1, column=0, sticky="ew", pady=(20, 20))
-        self.start_card.grid_columnconfigure(1, weight=1)
+        self.start_card.grid_columnconfigure(0, weight=1)
+        self.start_card.grid_columnconfigure(1, weight=0)
 
-        self.start_card_title = ctk.CTkLabel(self.start_card, text="Start a New Session", font=("Roboto", 18, "bold"), anchor="w")
-        self.start_card_title.grid(row=0, column=0, columnspan=2, sticky="ew", padx=20, pady=(20, 4))
+        self.start_card_title = ctk.CTkLabel(
+            self.start_card,
+            text="Start a New Session",
+            font=("Roboto", 18, "bold"),
+            anchor="w"
+        )
+        self.start_card_title.grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 4))
+
+        self.change_folder_btn = ctk.CTkButton(
+            self.start_card,
+            text="",
+            image=self.folder_icon,
+            width=32,
+            height=32,
+            fg_color="transparent",
+            hover_color=("#2a2a2a", "#2a2a2a"),
+            command=self._on_change_sessions_folder_clicked
+        )
+        self.change_folder_btn.grid(row=0, column=1, sticky="ne", padx=(0, 16), pady=(16, 4))
 
         self.start_card_subtitle = ctk.CTkLabel(self.start_card, text="Import a student list to begin.", anchor="w")
         self.start_card_subtitle.grid(row=1, column=0, columnspan=2, sticky="ew", padx=20, pady=(0, 20))
@@ -241,14 +372,15 @@ class App(CTk):
 
     def _scan_session_files(self):
         files = []
-        if not os.path.isdir(SESSIONS_FOLDER):
+        sessions_dir = get_sessions_folder()
+        if not os.path.isdir(sessions_dir):
             return files
         try:
-            entries = os.listdir(SESSIONS_FOLDER)
+            entries = os.listdir(sessions_dir)
         except OSError:
             return files
         for entry in entries:
-            path_entry = os.path.join(SESSIONS_FOLDER, entry)
+            path_entry = os.path.join(sessions_dir, entry)
             if os.path.isfile(path_entry) and entry.lower().endswith((".csv", ".xlsx")):
                 try:
                     stats = os.stat(path_entry)
@@ -437,13 +569,14 @@ class App(CTk):
 
     def _clear_all_sessions(self):
         # NOTE: This method is copied almost verbatim.
-        # It scans the SESSIONS_FOLDER and deletes files.
-        if not os.path.isdir(SESSIONS_FOLDER): return
+        # It scans the sessions directory and deletes files.
+        sessions_dir = get_sessions_folder()
+        if not os.path.isdir(sessions_dir): return
 
         paths_to_delete = [
-            os.path.join(SESSIONS_FOLDER, entry)
-            for entry in os.listdir(SESSIONS_FOLDER)
-            if os.path.isfile(os.path.join(SESSIONS_FOLDER, entry))
+            os.path.join(sessions_dir, entry)
+            for entry in os.listdir(sessions_dir)
+            if os.path.isfile(os.path.join(sessions_dir, entry))
         ]
 
         if not paths_to_delete: return
@@ -643,11 +776,12 @@ class App(CTk):
         session_map = {}
         if not stages or not centers:
             return session_map
-        if not os.path.isdir(SESSIONS_FOLDER):
+        sessions_dir = get_sessions_folder()
+        if not os.path.isdir(sessions_dir):
             return session_map
 
-        for entry in os.listdir(SESSIONS_FOLDER):
-            path_entry = os.path.join(SESSIONS_FOLDER, entry)
+        for entry in os.listdir(sessions_dir):
+            path_entry = os.path.join(sessions_dir, entry)
             if not os.path.isfile(path_entry):
                 continue
             name, ext = os.path.splitext(entry)
@@ -709,7 +843,8 @@ class App(CTk):
         params = {"stage": payload["stage"], "center": payload["center"], "no": payload["no"]}
         file_type = SETTINGS.get("file_type", "csv")
         ext = "xlsx" if file_type == "xlsx" else "csv"
-        session_path = os.path.join(SESSIONS_FOLDER, f"{name}.{ext}")
+        sessions_dir = get_sessions_folder()
+        session_path = os.path.join(sessions_dir, f"{name}.{ext}")
         
         created = False
         if not os.path.exists(session_path) or messagebox.askyesno("Overwrite Session?", f"Session '{name}' already exists. Do you want to overwrite it with the currently loaded roster?"):

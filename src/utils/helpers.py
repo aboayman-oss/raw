@@ -1,4 +1,5 @@
 ﻿"""Shared constants and helpers for the RFID Attendance Manager UI."""
+import json
 import os
 import sys
 import ctypes
@@ -66,11 +67,12 @@ SETTINGS_ICON_FILE = os.path.join(ASSETS_DIR, 'settings.png')
 IMPORT_ICON_FILE = os.path.join(ASSETS_DIR, 'import.png')
 NEW_SESSION_ICON_FILE = os.path.join(ASSETS_DIR, 'add.png')
 DASHBOARD_ICON_FILE = os.path.join(ASSETS_DIR, 'dashboard.png')
+FOLDER_OPEN_ICON_FILE = os.path.join(ASSETS_DIR, 'folder_open.png')
 HOME_BG_FILE     = os.path.join(ASSETS_DIR, 'background.jpg')
 SETTINGS_BG_FILE = os.path.join(ASSETS_DIR, 'backgroundnew.jpg')
 
 DATA_FOLDER      = os.path.join(BASE_FOLDER, 'Data')
-SESSIONS_FOLDER  = os.path.join(BASE_FOLDER, 'Sessions')
+DEFAULT_SESSIONS_FOLDER = os.path.join(BASE_FOLDER, 'Sessions')
 ARCHIVE_FOLDER   = os.path.join(BASE_FOLDER, 'Data archive')
 MAPPING_FILE     = os.path.join(ARCHIVE_FOLDER, 'column_map.json')
 SETTINGS_FILE    = os.path.join(ARCHIVE_FOLDER, 'app_settings.json')
@@ -82,10 +84,11 @@ MIN_SETTINGS_SIZE      = (640, 480)
 MIN_SESSION_SETUP_SIZE = (360, 240)
 MIN_SUMMARY_SIZE       = (380, 320)
 MIN_PAST_SESSIONS_SIZE = (720, 480)
-for folder in (DATA_FOLDER, SESSIONS_FOLDER, ARCHIVE_FOLDER):
+for folder in (DATA_FOLDER, DEFAULT_SESSIONS_FOLDER, ARCHIVE_FOLDER):
     os.makedirs(folder, exist_ok=True)
 
 SETTINGS = {
+    "sessions_folder": DEFAULT_SESSIONS_FOLDER,
     "stage_options":  ["2nd", "3rd"],
     "center_options": [
         "October", "Ferdous", "Helwan", "Hadayek Helwan",
@@ -93,7 +96,42 @@ SETTINGS = {
     ],
     "restrictions": {"exam": True, "homework": True},
     "file_type": "xlsx"
+
 }
+
+
+"""Session folder helpers"""
+
+def _normalize_folder_path(path):
+    if not path:
+        return DEFAULT_SESSIONS_FOLDER
+    normalized = os.path.abspath(path)
+    return normalized
+
+
+def ensure_directory(path):
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def get_sessions_folder():
+    path = SETTINGS.get("sessions_folder") or DEFAULT_SESSIONS_FOLDER
+    normalized = _normalize_folder_path(path)
+    return ensure_directory(normalized)
+
+
+def set_sessions_folder(path):
+    normalized = _normalize_folder_path(path)
+    ensure_directory(normalized)
+    SETTINGS["sessions_folder"] = normalized
+    return normalized
+
+
+def save_settings():
+    os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
+    with open(SETTINGS_FILE, "w", encoding="utf-8") as file:
+        json.dump(SETTINGS, file, indent=2)
+
 
 
 

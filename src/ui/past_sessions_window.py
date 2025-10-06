@@ -5,7 +5,7 @@ from tkinter import messagebox, ttk
 
 from customtkinter import CTkButton, CTkFrame, CTkLabel, CTkToplevel
 
-from utils.helpers import MIN_PAST_SESSIONS_SIZE, SESSIONS_FOLDER, bring_window_to_front, ensure_initial_size, set_dark_title_bar
+from utils.helpers import MIN_PAST_SESSIONS_SIZE, bring_window_to_front, ensure_initial_size, get_sessions_folder, set_dark_title_bar
 
 class PastSessionsWindow(CTkToplevel):
     def __init__(self, parent):
@@ -94,14 +94,15 @@ class PastSessionsWindow(CTkToplevel):
         for item in self.tree.get_children():
             self.tree.delete(item)
         self._paths.clear()
-        if not os.path.isdir(SESSIONS_FOLDER):
+        sessions_dir = get_sessions_folder()
+        if not os.path.isdir(sessions_dir):
             self._toggle_empty_state(True)
             self._on_select()
             self._update_clear_state()
             return
         files = []
-        for entry in os.listdir(SESSIONS_FOLDER):
-            path_entry = os.path.join(SESSIONS_FOLDER, entry)
+        for entry in os.listdir(sessions_dir):
+            path_entry = os.path.join(sessions_dir, entry)
             if os.path.isfile(path_entry) and entry.lower().endswith((".csv", ".xlsx")):
                 stats = os.stat(path_entry)
                 files.append((path_entry, stats.st_mtime, stats.st_size))
