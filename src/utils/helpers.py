@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pandas as pd
 
+INVALID_PATH_CHARS = set('<>::"/\\|?*')
+
 DWMWA_USE_IMMERSIVE_DARK_MODE = 20
 DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1 = 19
 DWMWA_CAPTION_COLOR = 35
@@ -126,6 +128,53 @@ def set_sessions_folder(path):
     SETTINGS["sessions_folder"] = normalized
     return normalized
 
+
+
+def _sanitize_path_component(value, fallback):
+    raw = (value or '').strip()
+    if not raw:
+        return fallback
+    sanitized = []
+    for ch in raw:
+        if ch in INVALID_PATH_CHARS:
+            sanitized.append('_')
+        else:
+            sanitized.append(ch)
+    sanitized_str = ''.join(sanitized)
+    sanitized_str = sanitized_str.replace(os.sep, '_')
+    if os.altsep:
+        sanitized_str = sanitized_str.replace(os.altsep, '_')
+    sanitized_str = sanitized_str.strip()
+    sanitized_str = sanitized_str.rstrip('.')
+    if sanitized_str in ('', '.', '..'):
+        return fallback
+    return sanitized_str
+
+
+def resolve_session_directory(stage=None, center=None, *, create=False):
+    base = get_sessions_folder()
+    target = base
+    if stage:
+        stage_component = _sanitize_path_component(stage, 'Stage')
+        target = os.path.join(target, stage_component)
+        if create:
+            ensure_directory(target)
+    if center:
+        center_component = _sanitize_path_component(center, 'Center')
+        target = os.path.join(target, center_component)
+        if create:
+            ensure_directory(target)
+    if not (stage or center) and create:
+        ensure_directory(target)
+    return target
+
+
+def resolve_session_file_path(name, *, stage=None, center=None, ext='csv', create=False):
+    ext = (ext or '').lstrip('.')
+    ext = ext or 'csv'
+    directory = resolve_session_directory(stage, center, create=create)
+    filename = f"{name}.{ext}"
+    return os.path.join(directory, filename)
 
 def save_settings():
     os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)

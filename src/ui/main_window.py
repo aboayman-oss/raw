@@ -32,6 +32,7 @@ from utils.helpers import (
     ensure_initial_size,
     get_sessions_folder,
     read_data,
+    resolve_session_file_path,
     save_settings,
     set_dark_title_bar,
     set_sessions_folder,
@@ -376,17 +377,18 @@ class App(CTk):
         if not os.path.isdir(sessions_dir):
             return files
         try:
-            entries = os.listdir(sessions_dir)
+            for root, _dirs, filenames in os.walk(sessions_dir):
+                for filename in filenames:
+                    if not filename.lower().endswith((".csv", ".xlsx")):
+                        continue
+                    path_entry = os.path.join(root, filename)
+                    try:
+                        stats = os.stat(path_entry)
+                    except OSError:
+                        continue
+                    files.append((path_entry, stats.st_mtime, stats.st_size))
         except OSError:
             return files
-        for entry in entries:
-            path_entry = os.path.join(sessions_dir, entry)
-            if os.path.isfile(path_entry) and entry.lower().endswith((".csv", ".xlsx")):
-                try:
-                    stats = os.stat(path_entry)
-                except OSError:
-                    continue
-                files.append((path_entry, stats.st_mtime, stats.st_size))
         files.sort(key=lambda item: item[1], reverse=True)
         return files
 
@@ -483,7 +485,7 @@ class App(CTk):
         try:
             name = os.path.splitext(os.path.basename(path_entry))[0]
             df = read_data(path_entry)
-            sm = SessionManager(name, {}, self.column_map, df)
+            sm = SessionManager(name, {}, self.column_map, df, session_path=path_entry)
             ScanWindow(self, sm, read_only=read_only)
             if read_only:
                 self.set_status(f"Session '{name}' opened in view-only mode.")
@@ -571,22 +573,24 @@ class App(CTk):
         # NOTE: This method is copied almost verbatim.
         # It scans the sessions directory and deletes files.
         sessions_dir = get_sessions_folder()
-        if not os.path.isdir(sessions_dir): return
+        if not os.path.isdir(sessions_dir):
+            return
 
-        paths_to_delete = [
-            os.path.join(sessions_dir, entry)
-            for entry in os.listdir(sessions_dir)
-            if os.path.isfile(os.path.join(sessions_dir, entry))
-        ]
+        paths_to_delete = []
+        for root, _dirs, files in os.walk(sessions_dir):
+            for filename in files:
+                paths_to_delete.append(os.path.join(root, filename))
 
-        if not paths_to_delete: return
+        if not paths_to_delete:
+            return
 
         confirm = messagebox.askyesno(
             "Clear All Sessions",
             f"This will permanently delete {len(paths_to_delete)} session file(s). Are you sure?",
-            parent=self # Use 'self' as the parent window
+            parent=self
         )
-        if not confirm: return
+        if not confirm:
+            return
 
         failures = []
         for path_entry in paths_to_delete:
@@ -594,6 +598,14 @@ class App(CTk):
                 os.remove(path_entry)
             except Exception as exc:
                 failures.append(f"{os.path.basename(path_entry)}: {exc}")
+
+        for root, _dirs, _files in os.walk(sessions_dir, topdown=False):
+            if root == sessions_dir:
+                continue
+            try:
+                os.rmdir(root)
+            except OSError:
+                pass
 
         self._invalidate_session_files_cache()
         self._populate_past_sessions_list()
@@ -780,27 +792,54 @@ class App(CTk):
         if not os.path.isdir(sessions_dir):
             return session_map
 
-        for entry in os.listdir(sessions_dir):
-            path_entry = os.path.join(sessions_dir, entry)
-            if not os.path.isfile(path_entry):
-                continue
-            name, ext = os.path.splitext(entry)
-            if ext.lower() not in ('.csv', '.xlsx'):
-                continue
-            if ' session ' not in name:
-                continue
-            prefix, number_str = name.rsplit(' session ', 1)
-            if not number_str.isdigit():
-                continue
-            number = int(number_str)
-            for stage in stages:
-                stage_prefix = f"{stage} "
-                if prefix.startswith(stage_prefix):
-                    center_candidate = prefix[len(stage_prefix):]
-                    if center_candidate in centers:
-                        center_map = session_map.setdefault(stage, {})
-                        center_map[center_candidate] = max(center_map.get(center_candidate, 0), number)
-                    break
+        try:
+            iterator = os.walk(sessions_dir)
+        except OSError:
+            return session_map
+
+        for root, _dirs, files in iterator:
+            for entry in files:
+                name, ext = os.path.splitext(entry)
+                if ext.lower() not in ('.csv', '.xlsx'):
+                    continue
+                if ' session ' not in name:
+                    continue
+                try:
+                    prefix, number_str = name.rsplit(' session ', 1)
+                except ValueError:
+                    continue
+                if not number_str.isdigit():
+                    continue
+                number = int(number_str)
+
+                stage_candidate = None
+                center_candidate = None
+
+                rel_root = os.path.relpath(root, sessions_dir)
+                if rel_root != '.':
+                    parts = rel_root.split(os.sep)
+                    if len(parts) >= 1:
+                        maybe_stage = parts[0]
+                        if maybe_stage in stages:
+                            stage_candidate = maybe_stage
+                    if len(parts) >= 2:
+                        maybe_center = parts[1]
+                        if maybe_center in centers:
+                            center_candidate = maybe_center
+
+                if not stage_candidate or not center_candidate:
+                    for stage in stages:
+                        stage_prefix = f"{stage} "
+                        if prefix.startswith(stage_prefix):
+                            potential_center = prefix[len(stage_prefix):]
+                            if potential_center in centers:
+                                stage_candidate = stage
+                                center_candidate = potential_center
+                            break
+
+                if stage_candidate and center_candidate:
+                    center_map = session_map.setdefault(stage_candidate, {})
+                    center_map[center_candidate] = max(center_map.get(center_candidate, 0), number)
         return session_map
 
     def open_scan_window_setup(self):
@@ -843,16 +882,22 @@ class App(CTk):
         params = {"stage": payload["stage"], "center": payload["center"], "no": payload["no"]}
         file_type = SETTINGS.get("file_type", "csv")
         ext = "xlsx" if file_type == "xlsx" else "csv"
-        sessions_dir = get_sessions_folder()
-        session_path = os.path.join(sessions_dir, f"{name}.{ext}")
-        
+        session_path = resolve_session_file_path(
+            name,
+            stage=params.get("stage"),
+            center=params.get("center"),
+            ext=ext,
+            create=True,
+        )
+
         created = False
         if not os.path.exists(session_path) or messagebox.askyesno("Overwrite Session?", f"Session '{name}' already exists. Do you want to overwrite it with the currently loaded roster?"):
+            os.makedirs(os.path.dirname(session_path), exist_ok=True)
             write_data(self.data_df, session_path)
             created = True
-        
+
         session_df = read_data(session_path)
-        sm = SessionManager(name, params, self.column_map, session_df)
+        sm = SessionManager(name, params, self.column_map, session_df, session_path=session_path)
         
         self._invalidate_session_files_cache()
         self._refresh_recent_sessions()

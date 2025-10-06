@@ -101,11 +101,19 @@ class PastSessionsWindow(CTkToplevel):
             self._update_clear_state()
             return
         files = []
-        for entry in os.listdir(sessions_dir):
-            path_entry = os.path.join(sessions_dir, entry)
-            if os.path.isfile(path_entry) and entry.lower().endswith((".csv", ".xlsx")):
-                stats = os.stat(path_entry)
-                files.append((path_entry, stats.st_mtime, stats.st_size))
+        try:
+            for root, _dirs, filenames in os.walk(sessions_dir):
+                for filename in filenames:
+                    if not filename.lower().endswith((".csv", ".xlsx")):
+                        continue
+                    path_entry = os.path.join(root, filename)
+                    try:
+                        stats = os.stat(path_entry)
+                    except OSError:
+                        continue
+                    files.append((path_entry, stats.st_mtime, stats.st_size))
+        except OSError:
+            files = []
         files.sort(key=lambda item: item[1], reverse=True)
         for index, (path_entry, modified, size) in enumerate(files):
             name = os.path.splitext(os.path.basename(path_entry))[0]
@@ -177,6 +185,16 @@ class PastSessionsWindow(CTkToplevel):
                 os.remove(path_entry)
             except Exception as exc:
                 failures.append(f"{os.path.basename(path_entry)}: {exc}")
+
+        sessions_dir = get_sessions_folder()
+        for root, _dirs, _files in os.walk(sessions_dir, topdown=False):
+            if root == sessions_dir:
+                continue
+            try:
+                os.rmdir(root)
+            except OSError:
+                pass
+
         self.refresh()
         if hasattr(self.parent, "_refresh_recent_sessions"):
             try:
