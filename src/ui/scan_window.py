@@ -6,6 +6,7 @@ to provide a guided, conversational user experience. All changes for this redesi
 encapsulated within this file, primarily in the `scan_focus_` prefixed methods.
 """
 import os
+import re
 from datetime import datetime
 from tkinter import messagebox, ttk
 
@@ -63,6 +64,35 @@ def get_font_for_text(text):
     if any('\u0600' <= char <= '\u06FF' for char in text_str):
         return "Noto Sans Arabic"
     return "Roboto"
+
+def _normalize_grade_text(value):
+    """Return a trimmed string representation for grade values."""
+    if value is None:
+        return ""
+    return str(value).strip()
+
+def _grade_is_zero(value):
+    """Return True if the grade text represents a zero score."""
+    text = _normalize_grade_text(value)
+    if not text:
+        return False
+    numerator = text.split("/", 1)[0].strip() if "/" in text else text
+    match = re.search(r"-?\d+(?:\.\d+)?", numerator)
+    if not match:
+        match = re.search(r"-?\d+(?:\.\d+)?", text)
+        if not match:
+            return False
+    try:
+        return float(match.group()) == 0.0
+    except ValueError:
+        return False
+
+def _grade_missing_or_zero(value):
+    """Return True when the grade is blank or equals zero."""
+    text = _normalize_grade_text(value)
+    if not text:
+        return True
+    return _grade_is_zero(text)
 
 # --- Constants for the new Focus View Design ---
 ASSETS_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "assets")
@@ -508,7 +538,7 @@ class ScanWindow(CTkToplevel):
         hw_text = ""
         if hw_grade:
             hw_text = str(hw_grade)
-            if hw_grade == "0":
+            if _grade_is_zero(hw_grade):
                 hw_text += " (Fail)"
         else:
             hw_text = "Not Submitted"
@@ -522,7 +552,7 @@ class ScanWindow(CTkToplevel):
         exam_text = ""
         if exam_grade:
             exam_text = str(exam_grade)
-            if exam_grade == "0":
+            if _grade_is_zero(exam_grade):
                 exam_text += " (Fail)"
         else:
             exam_text = "Not Submitted"
@@ -895,11 +925,11 @@ class ScanWindow(CTkToplevel):
     def scan_collect_missing_tasks(self, iid):
         missing = []
         exam_grade = self.scan_tree_get(iid, "exam")
-        if self.restrictions.get("exam") and "exam" in self.tree["columns"] and (not exam_grade or exam_grade == "0"):
+        if self.restrictions.get("exam") and "exam" in self.tree["columns"] and _grade_missing_or_zero(exam_grade):
             missing.append("exam")
         
         hw_grade = self.scan_tree_get(iid, "homework")
-        if self.restrictions.get("homework") and "homework" in self.tree["columns"] and (not hw_grade or hw_grade == "0"):
+        if self.restrictions.get("homework") and "homework" in self.tree["columns"] and _grade_missing_or_zero(hw_grade):
             missing.append("homework")
         return missing
 
@@ -1139,7 +1169,25 @@ class ScanWindow(CTkToplevel):
             self.scan_focus_clear()
         else:
             self.scan_focus_ctx = None
+        was_selected = bool(iid) and iid in (self.tree.selection() or ())
+        if was_selected:
+            try:
+                self.tree.selection_remove(iid)
+            except Exception:
+                was_selected = False
         self._flash_tree_row(iid)
+        if was_selected:
+            def _restore_tree_selection(target=iid):
+                if not self.tree.exists(target):
+                    return
+                if self.tree.selection():
+                    return
+                try:
+                    self.tree.selection_set(target)
+                    self.tree.focus(target)
+                except Exception:
+                    pass
+            self.after(AUTO_ATTEND_FLASH_DURATION_MS + 50, _restore_tree_selection)
         self._announce_auto_attend(context)
         self.after(120, self.scan_entry.focus_set)
 
@@ -1344,11 +1392,11 @@ class ScanWindow(CTkToplevel):
         total = len(self._all_iids)
         attended = sum(1 for iid in self._all_iids if self.tree.exists(iid) and self.scan_tree_get(iid, "attendance").lower() == "attend")
         metrics = {"total": total, "attended": attended, "attendance_rate": f"{(attended / total) * 100:.1f}%" if total else "0%"}
-        if self.restrictions.get("exam"): metrics["missing_exam"] = sum(1 for iid in self._all_iids if self.tree.exists(iid) and not self.scan_tree_get(iid, "exam"))
+        if self.restrictions.get("exam"): metrics["missing_exam"] = sum(1 for iid in self._all_iids if self.tree.exists(iid) and _grade_missing_or_zero(self.scan_tree_get(iid, "exam")))
         if self.restrictions.get("homework"):
             missing_hw_count = 0
             for iid in self._all_iids:
-                if self.tree.exists(iid) and self.scan_tree_get(iid, "homework") in ["", "0"]:
+                if self.tree.exists(iid) and _grade_missing_or_zero(self.scan_tree_get(iid, "homework")):
                     missing_hw_count += 1
             metrics["missing_hw"] = missing_hw_count
         return metrics
