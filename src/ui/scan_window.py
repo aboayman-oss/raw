@@ -111,6 +111,10 @@ STATUS_STYLES = {
     },
 }
 
+AUTO_ATTEND_SUCCESS_TAG = "auto_attend_success"
+AUTO_ATTEND_FLASH_BG = "#244b31"
+AUTO_ATTEND_FLASH_FG = "#ffffff"
+AUTO_ATTEND_FLASH_DURATION_MS = 900
 
 class ScanWindow(CTkToplevel):
     def _reset_treeview_sort(self):
@@ -176,6 +180,7 @@ class ScanWindow(CTkToplevel):
         self.scan_focus_visible_cache = []
         self.scan_focus_timer = None
         self.focus_view_container = None # For integrated view
+        self._row_flash_jobs = {}
         self.stats_vars = {
             "total": ctk.StringVar(value="0"),
             "attended": ctk.StringVar(value="0"),
@@ -702,6 +707,7 @@ class ScanWindow(CTkToplevel):
         }
 
         self.tree = ttk.Treeview(tree_container, columns=cols, show="headings", selectmode="browse")
+        self.tree.tag_configure(AUTO_ATTEND_SUCCESS_TAG, background=AUTO_ATTEND_FLASH_BG, foreground=AUTO_ATTEND_FLASH_FG)
         for col in cols:
             width = column_widths.get(col, 110)
             self.tree.heading(col, text=col.replace("_", " ").title())
@@ -910,8 +916,14 @@ class ScanWindow(CTkToplevel):
         if not original_clean: return addition_clean
         return f"{original_clean.rstrip()}\n{addition_clean}"
 
-    def scan_collect_new_note(self):
-        if not hasattr(self, "focus_view"): return ""
+    def scan_collect_new_note(self, context=None):
+        if not hasattr(self, "focus_view") or self.focus_view is None:
+            return ""
+        if self.focus_view_container and not self.focus_view_container.winfo_ismapped():
+            return ""
+        ctx = context if context is not None else getattr(self, "scan_focus_ctx", None)
+        if not ctx:
+            return ""
         try:
             raw_text = self.focus_view.notes.get("1.0", "end-1c")
         except Exception:
@@ -922,11 +934,8 @@ class ScanWindow(CTkToplevel):
         candidate = self._clean_value(raw_text)
         if not candidate or candidate == "Add notes here...":
             return ""
-        original_clean = ""
-        ctx = getattr(self, "scan_focus_ctx", None)
-        if ctx:
-            original_raw = (ctx.get("original_notes") or "").replace("\r\n", "\n")
-            original_clean = self._clean_value(original_raw)
+        original_raw = (ctx.get("original_notes") or "").replace("\r\n", "\n")
+        original_clean = self._clean_value(original_raw)
         if original_clean:
             if candidate == original_clean:
                 return ""
@@ -944,8 +953,13 @@ class ScanWindow(CTkToplevel):
     def _format_note_tag(self, dt):
         return f"[{dt.strftime('%I:%M:%S %p')}]"
 
+    def scan_now_timestamps(self):
+        current_dt = self._current_datetime()
+        return self._format_column_timestamp(current_dt), self._format_note_tag(current_dt)
+
     def scan_now_tag(self):
-        return self._format_note_tag(self._current_datetime())
+        _, note_tag = self.scan_now_timestamps()
+        return note_tag
 
     def scan_determine_status(self, scan_ctx):
         if scan_ctx.get("status") in {"not_found", "duplicate"}: return scan_ctx["status"]
@@ -1015,18 +1029,15 @@ class ScanWindow(CTkToplevel):
         context = self.scan_build_context_for_iid(iid, source=source)
         if card_id: context["card_id"] = context["card_display"] = card_id
         
-        # If the student has already attended, show the focus view to allow
-        # for note editing or potential attendance cancellation.
-        if context.get("already_attended"):
-            self.scan_focus_show(context)
-            return
-
-        # If it's a new scan and everything is okay, auto-attend.
-        # But if the user just double-clicked the row (source='manual'), just show the info.
-        if source == "scan" and context["status"] == "ok":
+        # If the student has no issues, auto-attend and dismiss.
+        # This applies to both scans and manual double-clicks.
+        if context["status"] == "ok":
             self.scan_handle_auto_attend(context)
+        
+        # For all other cases, show the focus view:
+        # - If the student has missing tasks (status is not 'ok').
+        # - If the student has already attended (status is 'already_attended').
         else:
-            # For all other cases (missing tasks, manual click), just show the focus view.
             self.scan_focus_show(context)
         # --- END: MODIFIED LOGIC ---
 
@@ -1113,13 +1124,56 @@ class ScanWindow(CTkToplevel):
     # --- END: NEW SAVE HANDLER METHODS ---
 
     def scan_handle_auto_attend(self, context):
-        if not context: return
-        tag = self.scan_now_tag()
-        typed = self.scan_collect_new_note()
-        final_note = self.scan_append_notes(context.get("existing_notes", ""), typed)
-        success = self.scan_commit_attendance(context["iid"], "attend", final_note, timestamp=tag)
+        if not context:
+            return
+        column_timestamp, _ = self.scan_now_timestamps()
+        final_note = self._clean_value(context.get("existing_notes", ""))
+        success = self.scan_commit_attendance(context["iid"], "attend", final_note, timestamp=column_timestamp)
         if success:
-            self.scan_focus_schedule_clear()
+            self._handle_auto_attend_success(context)
+
+    def _handle_auto_attend_success(self, context):
+        iid = context.get("iid")
+        self.scan_focus_cancel_timer()
+        if self._is_focus_view_visible():
+            self.scan_focus_clear()
+        else:
+            self.scan_focus_ctx = None
+        self._flash_tree_row(iid)
+        self._announce_auto_attend(context)
+        self.after(120, self.scan_entry.focus_set)
+
+    def _is_focus_view_visible(self):
+        return bool(self.focus_view_container and self.focus_view_container.winfo_ismapped())
+
+    def _flash_tree_row(self, iid, duration=AUTO_ATTEND_FLASH_DURATION_MS):
+        if not iid or not self.tree.exists(iid):
+            return
+        tags = list(self.tree.item(iid, "tags") or ())
+        if AUTO_ATTEND_SUCCESS_TAG not in tags:
+            tags.append(AUTO_ATTEND_SUCCESS_TAG)
+            self.tree.item(iid, tags=tuple(tags))
+        if iid in self._row_flash_jobs:
+            try:
+                self.after_cancel(self._row_flash_jobs[iid])
+            except Exception:
+                pass
+            self._row_flash_jobs.pop(iid, None)
+        self._row_flash_jobs[iid] = self.after(duration, lambda item=iid: self._clear_tree_tag(item, AUTO_ATTEND_SUCCESS_TAG))
+
+    def _clear_tree_tag(self, iid, tag_name):
+        self._row_flash_jobs.pop(iid, None)
+        if not iid or not self.tree.exists(iid):
+            return
+        remaining = tuple(tag for tag in (self.tree.item(iid, "tags") or ()) if tag != tag_name)
+        self.tree.item(iid, tags=remaining)
+
+    def _announce_auto_attend(self, context):
+        if not hasattr(self.parent, "set_status"):
+            return
+        display_name = context.get("display_name") or context.get("name") or context.get("student_id") or context.get("card_display") or "Student"
+        message_name = self._clean_value(display_name) or "Student"
+        self.parent.set_status(f"{message_name} marked as attended.")
 
     def scan_commit_attendance(self, iid, attendance, notes, *, timestamp=None, warn_on_duplicate=False):
         try: return bool(self._set_attendance(iid, attendance, notes, warn_on_duplicate=warn_on_duplicate, timestamp_override=timestamp))
@@ -1127,45 +1181,48 @@ class ScanWindow(CTkToplevel):
 
     def scan_focus_on_completed(self):
         context = self.scan_focus_ctx or {}
-        if not context.get("iid"): return
-        tag = self.scan_now_tag()
+        if not context.get("iid"):
+            return
+        column_timestamp, tag = self.scan_now_timestamps()
         desc = self.scan_describe_tasks(context.get("missing_tasks", [])) or "task"
         action_note = f"{tag} Completed {desc} at center."
         base = self.scan_append_notes(context.get("existing_notes", ""), action_note)
-        typed = self.scan_collect_new_note()
+        typed = self.scan_collect_new_note(context)
         final_note = self.scan_append_notes(base, typed)
-        if self.scan_commit_attendance(context["iid"], "attend", final_note, timestamp=tag):
+        if self.scan_commit_attendance(context["iid"], "attend", final_note, timestamp=column_timestamp):
             self.scan_focus_clear()
 
     def scan_focus_on_override(self):
         context = self.scan_focus_ctx or {}
-        if not context.get("iid"): return
-        tag = self.scan_now_tag()
+        if not context.get("iid"):
+            return
+        column_timestamp, tag = self.scan_now_timestamps()
         desc = self.scan_describe_tasks(context.get("missing_tasks", [])) or "task"
         action_note = f"{tag} Attended (Didn't do {desc})."
         base = self.scan_append_notes(context.get("existing_notes", ""), action_note)
-        typed = self.scan_collect_new_note()
+        typed = self.scan_collect_new_note(context)
         final_note = self.scan_append_notes(base, typed)
-        if self.scan_commit_attendance(context["iid"], "attend", final_note, timestamp=tag):
+        if self.scan_commit_attendance(context["iid"], "attend", final_note, timestamp=column_timestamp):
             self.scan_focus_clear()
 
     def scan_focus_on_deny(self):
         context = self.scan_focus_ctx or {}
-        if not context.get("iid"): return
-        tag = self.scan_now_tag()
+        if not context.get("iid"):
+            return
+        column_timestamp, tag = self.scan_now_timestamps()
         desc = self.scan_describe_tasks(context.get("missing_tasks", [])) or "requirements"
         action_note = f"{tag} Denied Entry: No {desc}."
         base = self.scan_append_notes(context.get("existing_notes", ""), action_note)
-        typed = self.scan_collect_new_note()
+        typed = self.scan_collect_new_note(context)
         final_note = self.scan_append_notes(base, typed)
-        if self.scan_commit_attendance(context["iid"], "", final_note, timestamp=tag):
+        if self.scan_commit_attendance(context["iid"], "", final_note, timestamp=column_timestamp):
             self.scan_focus_clear()
 
     def scan_focus_on_add_student(self):
         if self.read_only: return
         context = self.scan_focus_ctx or {}
         card_id = context.get("card_id") or context.get("card_display")
-        typed = self.scan_collect_new_note()
+        typed = self.scan_collect_new_note(context)
         default_notes = typed
         if not context.get("found", True) or context.get("status") == "not_found":
             diff_note = "(From diff Group)"
@@ -1174,14 +1231,15 @@ class ScanWindow(CTkToplevel):
 
     def scan_focus_on_cancel_attendance(self):
         context = self.scan_focus_ctx or {}
-        if not context.get("iid"): return
-        tag = self.scan_now_tag()
+        if not context.get("iid"):
+            return
+        column_timestamp, tag = self.scan_now_timestamps()
         action_note = f"{tag} Canceled."
         base = self.scan_append_notes(context.get("existing_notes", ""), action_note)
-        typed = self.scan_collect_new_note()
+        typed = self.scan_collect_new_note(context)
         final_note = self.scan_append_notes(base, typed)
         self._cancellations += 1
-        if self.scan_commit_attendance(context["iid"], "", final_note, timestamp=tag):
+        if self.scan_commit_attendance(context["iid"], "", final_note, timestamp=column_timestamp):
             self.scan_focus_clear()
 
     def _build_stats_strip(self):
@@ -1377,12 +1435,16 @@ class ScanWindow(CTkToplevel):
                 self.tree.detach(iid)
 
     def _set_attendance(self, code, attendance, notes, *, warn_on_duplicate=True, timestamp_override=None):
-        if self.read_only or not self.tree.exists(code): return False
+        if self.read_only or not self.tree.exists(code):
+            return False
         target_attendance = self._clean_value(attendance)
-        existing_timestamp = self.scan_tree_get(code, "timestamp")
+        existing_timestamp = self._clean_value(self.scan_tree_get(code, "timestamp"))
         current_dt = self._current_datetime()
         is_first_attend = target_attendance.lower() == "attend" and not existing_timestamp
-        column_timestamp = self._format_column_timestamp(current_dt) if is_first_attend else existing_timestamp
+        override_clean = self._clean_value(timestamp_override) if timestamp_override else ""
+        column_timestamp = existing_timestamp
+        if is_first_attend:
+            column_timestamp = override_clean or self._format_column_timestamp(current_dt)
         notes_clean = self._clean_value(notes)
         record_timestamp = self._clean_value(column_timestamp) if column_timestamp else ""
         rec = self._build_record_payload(code, target_attendance, notes_clean, record_timestamp)
@@ -1390,7 +1452,10 @@ class ScanWindow(CTkToplevel):
             self.sm.add_record(rec)
         except Exception as exc:
             messagebox.showwarning("Attendance Update Failed", str(exc), parent=self); return False # type: ignore
-        self._update_row(code, target_attendance, notes, column_timestamp if is_first_attend else None)
+        if is_first_attend:
+            self._update_row(code, target_attendance, notes_clean, column_timestamp)
+        else:
+            self._update_row(code, target_attendance, notes_clean)
         self._refresh_stats()
         return True
 
