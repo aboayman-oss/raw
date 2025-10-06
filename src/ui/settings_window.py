@@ -40,8 +40,8 @@ class SettingsWindow(CTkToplevel):
     """Toplevel dialog for managing template mapping, stage lists, and preferences."""
 
     mapping_placeholder = "-- Select --"
-    _list_row_base_color = "#454545"
-    _list_row_hover_color = "#515151"
+    _list_row_base_color = "#3F4550"
+    _list_row_hover_color = "#4C5563"
 
     def __init__(self, parent):
         super().__init__(parent)
@@ -65,6 +65,11 @@ class SettingsWindow(CTkToplevel):
             ("Timestamp", "timestamp"),
             ("Exam", "exam"),
             ("Homework", "homework"),
+        ]
+        self.mapping_groups = [
+            ("Student Information", self.mapping_fields[:4]),
+            ("Session Data", self.mapping_fields[4:7]),
+            ("Additional Tracking", self.mapping_fields[7:]),
         ]
         self.mapping_labels = {field_key: label_text for label_text, field_key in self.mapping_fields}
         self.mapping_controls = {}
@@ -96,32 +101,72 @@ class SettingsWindow(CTkToplevel):
         self.plus_icon = self._load_icon(PLUS_ICON_FILE, (16, 16))
         self.remove_icon = self._load_icon(REMOVE_ICON_FILE, (14, 14))
 
+        assets_dir = os.path.dirname(FOLDER_OPEN_ICON_FILE)
+        self.accent_color = "#2F80ED"
+        self.surface_color = "#353C44"
+        self.surface_muted_color = "#2A3037"
+        self.input_surface_color = "#1F2329"
+        self.nav_bg_color = "#232323"
+        self.nav_button_color = "#2D2D2D"
+        self.nav_button_hover_color = "#383838"
+        self.template_status_styles = {
+            "info": {"bg": "#253446", "text": "#BED0E8"},
+            "warn": {"bg": "#3D2C1F", "text": "#F2C089"},
+            "ok": {"bg": "#1F3A2F", "text": "#C7EED6"},
+        }
+        self.nav_icons = {
+            "template": self._load_icon(os.path.join(assets_dir, "mapping.png"), (18, 18)),
+            "stage": self._load_icon(os.path.join(assets_dir, "stage.png"), (18, 18)),
+            "general": self._load_icon(os.path.join(assets_dir, "settings.png"), (18, 18)),
+        }
+
         container = CTkFrame(self, fg_color="#2B2B2B")
         container.pack(fill="both", expand=True, padx=32, pady=(20, 36))
+        container.grid_rowconfigure(0, weight=1)
+        container.grid_columnconfigure(0, weight=0)
+        container.grid_columnconfigure(1, weight=1)
 
-        self.tabview = CTkTabview(container, fg_color="#2B2B2B")
-        self.tabview.pack(fill="both", expand=True)
-        segmented = self.tabview._segmented_button
-        segmented.configure(
-            fg_color="#2F2F2F",
-            selected_color="#2F80ED",
-            selected_hover_color="#1C64D1",
-            unselected_color="#3C3C3C",
-            unselected_hover_color="#454545",
-            text_color="#E6E6E6",
-        )
+        nav_frame = CTkFrame(container, fg_color=self.nav_bg_color, corner_radius=20)
+        nav_frame.grid(row=0, column=0, sticky="nsw")
+        nav_frame.grid_rowconfigure(2, weight=1)
 
-        self.template_tab = self.tabview.add("Template Mapping")
-        self.stage_tab = self.tabview.add("Stage & Center")
-        self.restrictions_tab = self.tabview.add("Restrictions")
-        self.filetype_tab = self.tabview.add("File Type")
+        nav_header = CTkFrame(nav_frame, fg_color="transparent")
+        nav_header.pack(fill="x", padx=20, pady=(20, 12))
+        CTkLabel(nav_header, text="Settings", font=ctk.CTkFont(size=22, weight="bold")).pack(anchor="w")
+        CTkLabel(
+            nav_header,
+            text="Choose a section to configure.",
+            font=ctk.CTkFont(size=14),
+            text_color="#BEBEBE",
+            justify="left",
+            wraplength=180,
+        ).pack(anchor="w", pady=(4, 0))
 
-        self._build_template_tab()
-        self._build_stage_tab()
-        self._build_restrictions_tab()
-        self._build_filetype_tab()
+        self.nav_button_container = CTkFrame(nav_frame, fg_color="transparent")
+        self.nav_button_container.pack(fill="both", expand=True, padx=12, pady=(0, 20))
 
-        btn_frame = CTkFrame(self, fg_color="#2F2F2F", corner_radius=12)
+        self.content_area = CTkFrame(container, fg_color="#2B2B2B")
+        self.content_area.grid(row=0, column=1, sticky="nsew", padx=(24, 0))
+        self.content_area.grid_rowconfigure(0, weight=1)
+        self.content_area.grid_columnconfigure(0, weight=1)
+
+        self.section_frames = {}
+        self.nav_buttons = {}
+        self.active_section = None
+
+        self.section_frames["template"] = self._build_template_section(self.content_area)
+        self.section_frames["stage"] = self._build_stage_section(self.content_area)
+        self.section_frames["general"] = self._build_general_section(self.content_area)
+
+        for key, label in (
+            ("template", "Template Mapping"),
+            ("stage", "Stage & Center"),
+            ("general", "General"),
+        ):
+            icon = self.nav_icons.get(key)
+            self._create_nav_button(self.nav_button_container, key, label, icon)
+
+        btn_frame = CTkFrame(self, fg_color=self.nav_bg_color, corner_radius=18)
         btn_frame.pack(side="bottom", fill="x", padx=32, pady=(8, 20))
         btn_frame.grid_columnconfigure(0, weight=1)
         btn_frame.grid_columnconfigure(1, weight=1)
@@ -131,34 +176,33 @@ class SettingsWindow(CTkToplevel):
             text="Cancel",
             command=self._cancel,
             fg_color="#2B2B2B",
-            hover_color="#34445F",
+            hover_color="#353C44",
             border_width=2,
-            border_color="#2F80ED",
-            text_color="#2F80ED",
+            border_color=self.accent_color,
+            text_color=self.accent_color,
+            corner_radius=14,
         )
-        self.cancel_button.grid(row=0, column=0, sticky="ew", padx=(16, 8), pady=12)
+        self.cancel_button.grid(row=0, column=0, sticky="ew", padx=(16, 8), pady=14)
 
         self.apply_button = CTkButton(
             btn_frame,
             text="Apply",
             command=self._apply_settings,
-            fg_color="#2F80ED",
+            fg_color=self.accent_color,
             hover_color="#1C64D1",
             text_color="#FFFFFF",
+            corner_radius=14,
             state="disabled",
         )
-        self.apply_button.grid(row=0, column=1, sticky="ew", padx=(8, 16), pady=12)
-
-        self.action_divider = CTkFrame(self, height=1, fg_color="#3A3A3A")
-        self.action_divider.pack(side="bottom", fill="x", padx=32)
+        self.apply_button.grid(row=0, column=1, sticky="ew", padx=(8, 16), pady=14)
 
         if self.working_mapping:
-            self.template_status_var.set("Using saved mapping. Load a sample file to update it.")
+            self.template_status_var.set("Using saved mapping. Load a sample file to refresh the template.")
         else:
             self.template_status_var.set("Load a sample file to map template fields.")
 
         self._populate_template_controls()
-        self._update_apply_state()
+        self._show_section("template")
         ensure_initial_size(self, min_size=MIN_SETTINGS_SIZE)
 
     def _load_icon(self, path, size):
@@ -172,254 +216,379 @@ class SettingsWindow(CTkToplevel):
             self._icon_cache[key] = icon
         return icon
 
-    def _build_template_tab(self):
-        card = CTkFrame(self.template_tab, fg_color="#3C3C3C", corner_radius=12)
-        card.pack(fill="both", expand=True, padx=4, pady=(6, 10))
-        card.grid_columnconfigure(0, weight=1)
+    def _create_nav_button(self, parent, key, label, icon):
+        button = CTkButton(
+            parent,
+            text=label,
+            image=icon,
+            compound="left",
+            anchor="w",
+            height=48,
+            fg_color=self.nav_button_color,
+            hover_color=self.nav_button_hover_color,
+            text_color="#E6E6E6",
+            font=ctk.CTkFont(size=15, weight="bold"),
+            corner_radius=16,
+            command=lambda item=key: self._show_section(item),
+        )
+        button.pack(fill="x", pady=4)
+        self.nav_buttons[key] = button
+        return button
 
+    def _style_nav_button(self, key, active):
+        button = self.nav_buttons.get(key)
+        if not button:
+            return
+        if active:
+            button.configure(fg_color=self.accent_color, hover_color="#1C64D1", text_color="#FFFFFF")
+        else:
+            button.configure(
+                fg_color=self.nav_button_color,
+                hover_color=self.nav_button_hover_color,
+                text_color="#E6E6E6",
+            )
+
+    def _show_section(self, key):
+        if key == getattr(self, "active_section", None):
+            return
+        if getattr(self, "active_section", None) in self.section_frames:
+            current = self.section_frames[self.active_section]
+            current.pack_forget()
+            self._style_nav_button(self.active_section, active=False)
+
+        frame = self.section_frames.get(key)
+        if frame:
+            frame.pack(fill="both", expand=True)
+        self._style_nav_button(key, active=True)
+        self.active_section = key
+        if key == "template":
+            self._update_template_status_display()
+        self._update_apply_state()
+
+    def _build_template_section(self, parent):
+        frame = CTkFrame(parent, fg_color=self.surface_color, corner_radius=24)
+        frame.pack_propagate(False)
+
+        header = CTkFrame(frame, fg_color="transparent")
+        header.pack(fill="x", padx=28, pady=(28, 12))
+        CTkLabel(header, text="Template Mapping", font=ctk.CTkFont(size=24, weight="bold")).pack(anchor="w")
         CTkLabel(
-            card,
+            header,
             text="Assign each template field to a column from a sample data file.",
+            font=ctk.CTkFont(size=15),
+            text_color="#BEBEBE",
+            wraplength=560,
             justify="left",
-            wraplength=520,
-        ).pack(anchor="w", padx=24, pady=(16, 8))
+        ).pack(anchor="w", pady=(6, 0))
 
-        status_row = CTkFrame(card, fg_color="transparent")
-        status_row.pack(fill="x", padx=24, pady=(0, 8))
-        status_row.grid_columnconfigure(0, weight=1)
-
-        status_container = CTkFrame(status_row, fg_color="transparent")
-        status_container.grid(row=0, column=0, sticky="w")
+        initial_style = self.template_status_styles["info"]
+        self.template_status_card = CTkFrame(frame, fg_color=initial_style["bg"], corner_radius=18)
+        self.template_status_card.pack(fill="x", padx=28, pady=(4, 16))
+        self.template_status_card.grid_columnconfigure(1, weight=1)
 
         info_icon = self.status_icons.get("info")
-        self.template_status_icon_label = CTkLabel(status_container, text="", image=info_icon)
-        self.template_status_icon_label.pack(side="left", pady=2)
+        self.template_status_icon_label = CTkLabel(self.template_status_card, text="", image=info_icon)
+        self.template_status_icon_label.grid(row=0, column=0, padx=(18, 12), pady=18, sticky="n")
         if info_icon:
             self.template_status_icon_label.image = info_icon
 
-        CTkLabel(
-            status_container,
+        self.template_status_text = CTkLabel(
+            self.template_status_card,
             textvariable=self.template_status_var,
             justify="left",
-            wraplength=420,
-        ).pack(side="left", padx=12)
+            wraplength=540,
+            text_color=initial_style["text"],
+            font=ctk.CTkFont(size=14),
+        )
+        self.template_status_text.grid(row=0, column=1, sticky="w", pady=18)
 
+        actions = CTkFrame(frame, fg_color="transparent")
+        actions.pack(fill="x", padx=28, pady=(0, 12))
+        actions.grid_columnconfigure(0, weight=1)
         CTkButton(
-            status_row,
-            text="Load Source File",
+            actions,
+            text="Load Sample File",
             image=self.folder_icon,
             compound="left",
             command=self._prompt_for_columns,
+            fg_color=self.accent_color,
+            hover_color="#1C64D1",
+            text_color="#FFFFFF",
+            corner_radius=12,
         ).grid(row=0, column=1, sticky="e")
 
-        form = CTkFrame(card, fg_color="transparent")
-        form.pack(fill="both", expand=True, padx=24, pady=(0, 16))
-        form.grid_columnconfigure(0, weight=0)
-        form.grid_columnconfigure(1, weight=1)
-        self.template_form = form
+        form_container = CTkFrame(frame, fg_color="transparent")
+        form_container.pack(fill="both", expand=True, padx=28, pady=(4, 28))
 
-        for idx, (label_text, field_key) in enumerate(self.mapping_fields):
-            row = idx * 2
-            CTkLabel(form, text=f"{label_text}:").grid(
-                row=row,
-                column=0,
-                sticky="w",
-                padx=(0, 18),
-                pady=(0, 4),
-            )
-            combo = CTkComboBox(
-                form,
-                state="readonly",
-                values=[self.mapping_placeholder],
-                border_width=1,
-                border_color="#2B2B2B",
-            )
-            combo.grid(row=row, column=1, sticky="ew", pady=(0, 4))
-            combo.set(self.mapping_placeholder)
-            combo.configure(command=lambda value, key=field_key: self._on_mapping_change(key, value))
-            self.mapping_controls[field_key] = combo
+        for group_title, fields in self.mapping_groups:
+            group_card = CTkFrame(form_container, fg_color=self.surface_muted_color, corner_radius=20)
+            group_card.pack(fill="x", pady=(0, 16))
+            group_card.grid_columnconfigure(1, weight=1)
 
-            hint = CTkLabel(
-                form,
-                text="",
-                font=self.hint_font,
-                text_color="#F28D35",
-                justify="left",
-                wraplength=420,
-            )
-            hint.grid(row=row + 1, column=1, sticky="w", pady=(0, 8))
-            self.mapping_hint_labels[field_key] = hint
+            CTkLabel(
+                group_card,
+                text=group_title,
+                font=ctk.CTkFont(size=16, weight="bold"),
+                text_color="#FFFFFF",
+                anchor="w",
+            ).grid(row=0, column=0, columnspan=2, sticky="w", padx=20, pady=(18, 10))
 
-    def _build_stage_tab(self):
-        card = CTkFrame(self.stage_tab, fg_color="#3C3C3C", corner_radius=12)
-        card.pack(fill="both", expand=True, padx=4, pady=(6, 10))
+            for idx, (label_text, field_key) in enumerate(fields):
+                row = idx * 2 + 1
+                CTkLabel(
+                    group_card,
+                    text=f"{label_text}:",
+                    anchor="w",
+                    text_color="#E8EAF0",
+                ).grid(row=row, column=0, sticky="w", padx=(20, 16), pady=(0, 8))
 
+                combo = CTkComboBox(
+                    group_card,
+                    state="readonly",
+                    values=[self.mapping_placeholder],
+                    border_width=0,
+                    fg_color=self.input_surface_color,
+                    button_color=self.input_surface_color,
+                    button_hover_color="#2B2E36",
+                    corner_radius=12,
+                )
+                combo.grid(row=row, column=1, sticky="ew", padx=(0, 20), pady=(0, 8))
+                combo.set(self.mapping_placeholder)
+                combo.configure(command=lambda value, key=field_key: self._on_mapping_change(key, value))
+                self.mapping_controls[field_key] = combo
+
+                hint = CTkLabel(
+                    group_card,
+                    text="",
+                    font=self.hint_font,
+                    text_color="#F28D35",
+                    justify="left",
+                    wraplength=480,
+                )
+                hint.grid(row=row + 1, column=1, sticky="w", padx=(0, 20), pady=(0, 6))
+                self.mapping_hint_labels[field_key] = hint
+
+        return frame
+
+    def _build_stage_section(self, parent):
+        frame = CTkFrame(parent, fg_color=self.surface_color, corner_radius=24)
+
+        header = CTkFrame(frame, fg_color="transparent")
+        header.pack(fill="x", padx=28, pady=(28, 12))
+        CTkLabel(header, text="Stage & Center", font=ctk.CTkFont(size=24, weight="bold")).pack(anchor="w")
         CTkLabel(
-            card,
+            header,
             text="Manage the stage and center choices available when starting a session.",
+            font=ctk.CTkFont(size=15),
+            text_color="#BEBEBE",
+            wraplength=560,
             justify="left",
-            wraplength=520,
-        ).pack(anchor="w", padx=24, pady=(16, 8))
+        ).pack(anchor="w", pady=(6, 0))
 
-        lists_frame = CTkFrame(card, fg_color="transparent")
-        lists_frame.pack(fill="both", expand=True, padx=24, pady=(0, 16))
-        lists_frame.grid_columnconfigure(0, weight=1)
-        lists_frame.grid_columnconfigure(1, weight=1)
+        cards = CTkFrame(frame, fg_color="transparent")
+        cards.pack(fill="both", expand=True, padx=28, pady=(8, 28))
+        cards.grid_columnconfigure(0, weight=1)
+        cards.grid_columnconfigure(1, weight=1)
+        cards.grid_rowconfigure(0, weight=1)
 
-        stage_column = CTkFrame(lists_frame, fg_color="transparent")
-        stage_column.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
-        stage_column.grid_rowconfigure(1, weight=1)
+        stage_card = self._build_option_card(
+            cards,
+            title="Stage Options",
+            placeholder="Add stage",
+            add_callback=self._add_stage,
+            entry_attr="stage_entry",
+            scroll_attr="stage_scroll",
+            rows_dict=self.stage_rows,
+            items=self.stage_items,
+            remove_callback=self._remove_stage_value,
+        )
+        stage_card.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
 
-        CTkLabel(stage_column, text="Stage Options", anchor="w").pack(anchor="w")
+        center_card = self._build_option_card(
+            cards,
+            title="Center Options",
+            placeholder="Add center",
+            add_callback=self._add_center,
+            entry_attr="center_entry",
+            scroll_attr="center_scroll",
+            rows_dict=self.center_rows,
+            items=self.center_items,
+            remove_callback=self._remove_center_value,
+        )
+        center_card.grid(row=0, column=1, sticky="nsew", padx=(12, 0))
 
-        stage_list_card = CTkFrame(stage_column, fg_color="#2F2F2F", corner_radius=12)
-        stage_list_card.pack(fill="both", expand=True, pady=(6, 10))
-        self.stage_scroll = CTkScrollableFrame(stage_list_card, fg_color="#2F2F2F")
-        self.stage_scroll.pack(fill="both", expand=True, padx=8, pady=8)
-        self.stage_scroll.grid_columnconfigure(0, weight=1)
+        return frame
 
-        stage_entry_row = CTkFrame(stage_column, fg_color="transparent")
-        stage_entry_row.pack(fill="x")
-        stage_entry_row.grid_columnconfigure(0, weight=1)
-
-        self.stage_entry = CTkEntry(stage_entry_row, placeholder_text="Add stage")
-        self.stage_entry.grid(row=0, column=0, sticky="ew", padx=(0, 12))
-        self.stage_entry.bind("<Return>", lambda _event: self._add_stage())
-
-        CTkButton(
-            stage_entry_row,
-            text="Add",
-            image=self.plus_icon,
-            compound="left",
-            width=110,
-            command=self._add_stage,
-        ).grid(row=0, column=1, sticky="e")
-
-        center_column = CTkFrame(lists_frame, fg_color="transparent")
-        center_column.grid(row=0, column=1, sticky="nsew", padx=(12, 0))
-        center_column.grid_rowconfigure(1, weight=1)
-
-        CTkLabel(center_column, text="Center Options", anchor="w").pack(anchor="w")
-
-        center_list_card = CTkFrame(center_column, fg_color="#2F2F2F", corner_radius=12)
-        center_list_card.pack(fill="both", expand=True, pady=(6, 10))
-        self.center_scroll = CTkScrollableFrame(center_list_card, fg_color="#2F2F2F")
-        self.center_scroll.pack(fill="both", expand=True, padx=8, pady=8)
-        self.center_scroll.grid_columnconfigure(0, weight=1)
-
-        center_entry_row = CTkFrame(center_column, fg_color="transparent")
-        center_entry_row.pack(fill="x")
-        center_entry_row.grid_columnconfigure(0, weight=1)
-
-        self.center_entry = CTkEntry(center_entry_row, placeholder_text="Add center")
-        self.center_entry.grid(row=0, column=0, sticky="ew", padx=(0, 12))
-        self.center_entry.bind("<Return>", lambda _event: self._add_center())
-
-        CTkButton(
-            center_entry_row,
-            text="Add",
-            image=self.plus_icon,
-            compound="left",
-            width=110,
-            command=self._add_center,
-        ).grid(row=0, column=1, sticky="e")
-
-        self._populate_option_rows(self.stage_scroll, self.stage_rows, self.stage_items, self._remove_stage_value)
-        self._populate_option_rows(self.center_scroll, self.center_rows, self.center_items, self._remove_center_value)
-
-    def _build_restrictions_tab(self):
-        card = CTkFrame(self.restrictions_tab, fg_color="#3C3C3C", corner_radius=12)
-        card.pack(fill="both", expand=True, padx=4, pady=(6, 10))
-        card.grid_columnconfigure(0, weight=1)
+    def _build_option_card(
+        self,
+        parent,
+        *,
+        title,
+        placeholder,
+        add_callback,
+        entry_attr,
+        scroll_attr,
+        rows_dict,
+        items,
+        remove_callback,
+    ):
+        card = CTkFrame(parent, fg_color=self.surface_muted_color, corner_radius=20)
+        card.grid_rowconfigure(2, weight=1)
 
         CTkLabel(
             card,
-            text="Toggle optional columns that should be collected during scans.",
-            justify="left",
-            wraplength=520,
-        ).pack(anchor="w", padx=24, pady=(16, 8))
+            text=title,
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color="#FFFFFF",
+            anchor="w",
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=20, pady=(18, 10))
 
-        toggle_card = CTkFrame(card, fg_color="#2F2F2F", corner_radius=12)
-        toggle_card.pack(fill="x", padx=24, pady=(0, 16))
+        entry_row = CTkFrame(card, fg_color=self.input_surface_color, corner_radius=16)
+        entry_row.grid(row=1, column=0, columnspan=2, sticky="ew", padx=20, pady=(0, 12))
+        entry_row.grid_columnconfigure(0, weight=1)
+
+        entry = CTkEntry(entry_row, placeholder_text=placeholder, corner_radius=12)
+        entry.grid(row=0, column=0, sticky="ew", padx=(12, 8), pady=12)
+        entry.bind("<Return>", lambda _event: add_callback())
+
+        CTkButton(
+            entry_row,
+            text="Add",
+            image=self.plus_icon,
+            compound="left",
+            width=110,
+            fg_color=self.accent_color,
+            hover_color="#1C64D1",
+            text_color="#FFFFFF",
+            corner_radius=12,
+            command=add_callback,
+        ).grid(row=0, column=1, sticky="e", padx=(0, 12), pady=12)
+
+        setattr(self, entry_attr, entry)
+
+        list_shell = CTkFrame(card, fg_color=self.input_surface_color, corner_radius=18)
+        list_shell.grid(row=2, column=0, columnspan=2, sticky="nsew", padx=20, pady=(0, 20))
+
+        scroll = CTkScrollableFrame(list_shell, fg_color=self.input_surface_color)
+        scroll.pack(fill="both", expand=True, padx=10, pady=12)
+        scroll.grid_columnconfigure(0, weight=1)
+        setattr(self, scroll_attr, scroll)
+
+        self._populate_option_rows(scroll, rows_dict, items, remove_callback)
+        return card
+
+    def _build_general_section(self, parent):
+        frame = CTkFrame(parent, fg_color=self.surface_color, corner_radius=24)
+
+        header = CTkFrame(frame, fg_color="transparent")
+        header.pack(fill="x", padx=28, pady=(28, 12))
+        CTkLabel(header, text="General", font=ctk.CTkFont(size=24, weight="bold")).pack(anchor="w")
+        CTkLabel(
+            header,
+            text="Configure optional columns and preferred export format.",
+            font=ctk.CTkFont(size=15),
+            text_color="#BEBEBE",
+            wraplength=560,
+            justify="left",
+        ).pack(anchor="w", pady=(6, 0))
+
+        body = CTkFrame(frame, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=28, pady=(8, 28))
+        body.grid_columnconfigure(0, weight=1)
+
+        toggles_card = CTkFrame(body, fg_color=self.surface_muted_color, corner_radius=20)
+        toggles_card.pack(fill="x", pady=(0, 20))
+
+        CTkLabel(
+            toggles_card,
+            text="Optional Columns",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color="#FFFFFF",
+            anchor="w",
+        ).pack(anchor="w", padx=20, pady=(18, 8))
+
+        toggles_inner = CTkFrame(toggles_card, fg_color="transparent")
+        toggles_inner.pack(fill="x", padx=16, pady=(0, 18))
 
         self._add_toggle_row(
-            toggle_card,
+            toggles_inner,
             title="Enable Exam Column",
             description="Collect exam grades alongside attendance so exports stay complete.",
             variable=self.var_exam,
-            bottom_padding=10,
         )
         self._add_toggle_row(
-            toggle_card,
+            toggles_inner,
             title="Enable Homework Column",
             description="Track homework completion in the same sheet when exporting data.",
             variable=self.var_homework,
-            bottom_padding=12,
         )
 
-    def _add_toggle_row(self, parent, *, title, description, variable, bottom_padding):
-        row = CTkFrame(parent, fg_color="transparent")
-        row.pack(fill="x", padx=24, pady=(12, 0))
+        format_card = CTkFrame(body, fg_color=self.surface_muted_color, corner_radius=20)
+        format_card.pack(fill="x")
+
+        CTkLabel(
+            format_card,
+            text="Data Format",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color="#FFFFFF",
+            anchor="w",
+        ).pack(anchor="w", padx=20, pady=(18, 8))
+
+        segment_wrapper = CTkFrame(format_card, fg_color=self.input_surface_color, corner_radius=16)
+        segment_wrapper.pack(fill="x", padx=20, pady=(0, 20))
+        segment_wrapper.grid_columnconfigure(0, weight=1)
+
+        self.filetype_segment = CTkSegmentedButton(
+            segment_wrapper,
+            values=["CSV", "XLSX"],
+            variable=self.var_file_type,
+            command=self._on_file_type_change,
+            corner_radius=14,
+        )
+        self.filetype_segment.grid(row=0, column=0, sticky="ew", padx=12, pady=12)
+        self.filetype_segment.configure(
+            fg_color=self.input_surface_color,
+            selected_color=self.accent_color,
+            selected_hover_color="#1C64D1",
+            unselected_color="#2F333B",
+            unselected_hover_color="#3C414B",
+            text_color="#E6E6E6",
+        )
+        self.filetype_segment.set(self.var_file_type.get())
+
+        return frame
+
+    def _add_toggle_row(self, parent, *, title, description, variable):
+        row = CTkFrame(parent, fg_color=self.input_surface_color, corner_radius=16)
+        row.pack(fill="x", pady=8)
         row.grid_columnconfigure(0, weight=1)
 
         CTkLabel(
             row,
             text=title,
             font=ctk.CTkFont(size=15, weight="bold"),
+            text_color="#FFFFFF",
             anchor="w",
-        ).grid(row=0, column=0, sticky="w")
+        ).grid(row=0, column=0, sticky="w", padx=16, pady=(14, 0))
 
         CTkSwitch(
             row,
             text="",
             variable=variable,
             command=self._update_apply_state,
-            progress_color="#2F80ED",
-            fg_color="#4C4C4C",
+            progress_color=self.accent_color,
+            fg_color="#40464F",
             button_color="#FFFFFF",
-            button_hover_color="#E0E0E0",
-        ).grid(row=0, column=1, sticky="e")
+            button_hover_color="#D7E3F8",
+        ).grid(row=0, column=1, sticky="e", padx=16, pady=12)
 
         CTkLabel(
-            parent,
+            row,
             text=description,
             justify="left",
             text_color="#BEBEBE",
-            wraplength=520,
-        ).pack(fill="x", padx=24, pady=(2, bottom_padding))
-
-    def _build_filetype_tab(self):
-        card = CTkFrame(self.filetype_tab, fg_color="#3C3C3C", corner_radius=12)
-        card.pack(fill="both", expand=True, padx=4, pady=(6, 10))
-        card.grid_columnconfigure(0, weight=1)
-
-        CTkLabel(
-            card,
-            text="Choose the preferred format when importing or exporting data.",
-            justify="left",
-            wraplength=520,
-        ).pack(anchor="w", padx=24, pady=(16, 8))
-
-        segment_card = CTkFrame(card, fg_color="#2F2F2F", corner_radius=12)
-        segment_card.pack(fill="x", padx=24, pady=(0, 16))
-        segment_card.grid_columnconfigure(0, weight=1)
-
-        self.filetype_segment = CTkSegmentedButton(
-            segment_card,
-            values=["CSV", "XLSX"],
-            variable=self.var_file_type,
-            command=self._on_file_type_change,
-        )
-        self.filetype_segment.grid(row=0, column=0, padx=16, pady=12, sticky="ew")
-        self.filetype_segment.configure(
-            fg_color="#2F2F2F",
-            selected_color="#2F80ED",
-            selected_hover_color="#1C64D1",
-            unselected_color="#3C3C3C",
-            unselected_hover_color="#454545",
-            text_color="#E6E6E6",
-        )
-        self.filetype_segment.set(self.var_file_type.get())
+            wraplength=420,
+        ).grid(row=1, column=0, columnspan=2, sticky="w", padx=16, pady=(4, 14))
 
     def _populate_option_rows(self, container, rows_dict, items, remove_callback):
         for child in container.winfo_children():
@@ -429,12 +598,18 @@ class SettingsWindow(CTkToplevel):
             self._create_option_row(container, rows_dict, value, remove_callback, animate=False)
 
     def _create_option_row(self, container, rows_dict, value, remove_callback, animate=False):
-        row = CTkFrame(container, fg_color=self._list_row_base_color, corner_radius=10)
-        row.pack(fill="x", pady=(0, 8))
+        row = CTkFrame(container, fg_color=self._list_row_base_color, corner_radius=18)
+        row.pack(fill="x", pady=6, padx=2)
         row.grid_columnconfigure(0, weight=1)
         row._hide_job = None  # type: ignore[attr-defined]
 
-        CTkLabel(row, text=value, anchor="w").grid(row=0, column=0, sticky="w", padx=16, pady=12)
+        CTkLabel(
+            row,
+            text=value,
+            anchor="w",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color="#FFFFFF",
+        ).grid(row=0, column=0, sticky="w", padx=18, pady=10)
 
         button = CTkButton(
             row,
@@ -443,9 +618,9 @@ class SettingsWindow(CTkToplevel):
             width=36,
             command=lambda: remove_callback(value),
             fg_color="transparent",
-            hover_color="#5A5A5A",
+            hover_color="#566070",
         )
-        button.grid(row=0, column=1, sticky="e", padx=(0, 12), pady=8)
+        button.grid(row=0, column=1, sticky="e", padx=(0, 14), pady=8)
         button.grid_remove()
 
         self._bind_row_hover(row, button)
@@ -496,7 +671,7 @@ class SettingsWindow(CTkToplevel):
         button.bind("<ButtonRelease-1>", lambda _event: schedule_hide(), add="+")
 
     def _animate_row_in(self, row):
-        colors = ["#2F2F2F", "#3C3C3C", self._list_row_base_color]
+        colors = ["#2E333B", "#363C45", self._list_row_base_color]
 
         def step(index=0):
             if not row.winfo_exists() or index >= len(colors):
@@ -519,7 +694,7 @@ class SettingsWindow(CTkToplevel):
             return
 
         base = self._list_row_base_color
-        accent = "#5C4D4D"
+        accent = self.accent_color
 
         def pulse(iteration=0):
             if not row.winfo_exists():
