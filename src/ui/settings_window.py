@@ -6,7 +6,6 @@ from tkinter import filedialog, messagebox
 import customtkinter as ctk
 from customtkinter import (
     CTkButton,
-    CTkComboBox,
     CTkEntry,
     CTkFrame,
     CTkImage,
@@ -18,10 +17,10 @@ from customtkinter import (
 )
 from PIL import Image
 
+from ui.components.modern_dropdown import ModernDropdown
 from utils.helpers import (
     FOLDER_OPEN_ICON_FILE,
     MAPPING_FILE,
-    MIN_SETTINGS_SIZE,
     PLUS_ICON_FILE,
     REMOVE_ICON_FILE,
     SETTINGS,
@@ -29,7 +28,6 @@ from utils.helpers import (
     STATUS_INFO_ICON_FILE,
     STATUS_OK_ICON_FILE,
     bring_window_to_front,
-    ensure_initial_size,
     read_data,
     set_dark_title_bar,
 )
@@ -46,7 +44,8 @@ class SettingsWindow(CTkToplevel):
         super().__init__(parent)
         set_dark_title_bar(self)
         self.title("Settings")
-        self.minsize(*MIN_SETTINGS_SIZE)
+        self.geometry("1000x800")
+        self.minsize(1000, 800)
         self.configure(fg_color="#2B2B2B")
 
         self.parent_app = parent
@@ -206,7 +205,6 @@ class SettingsWindow(CTkToplevel):
 
         self._populate_template_controls()
         self._show_section("template")
-        ensure_initial_size(self, min_size=MIN_SETTINGS_SIZE)
 
     def _load_icon(self, path, size):
         if not path or not os.path.exists(path):
@@ -318,12 +316,13 @@ class SettingsWindow(CTkToplevel):
             corner_radius=12,
         ).grid(row=0, column=1, sticky="e")
 
-        form_container = CTkFrame(frame, fg_color="transparent")
-        form_container.pack(fill="both", expand=True, padx=28, pady=(4, 28))
+        form_container = CTkScrollableFrame(frame, fg_color="transparent")
+        form_container.pack(fill="both", expand=True, padx=12, pady=(4, 28))
+        form_container.grid_columnconfigure(0, weight=1)
 
         for group_title, fields in self.mapping_groups:
             group_card = CTkFrame(form_container, fg_color=self.surface_muted_color, corner_radius=20)
-            group_card.pack(fill="x", pady=(0, 16))
+            group_card.pack(fill="x", expand=True, padx=16, pady=(0, 16))
             group_card.grid_columnconfigure(1, weight=1)
 
             CTkLabel(
@@ -343,19 +342,17 @@ class SettingsWindow(CTkToplevel):
                     text_color="#E8EAF0",
                 ).grid(row=row, column=0, sticky="w", padx=(20, 16), pady=(0, 8))
 
-                combo = CTkComboBox(
+                combo = ModernDropdown(
                     group_card,
-                    state="readonly",
+                    placeholder=self.mapping_placeholder,
                     values=[self.mapping_placeholder],
-                    border_width=0,
-                    fg_color=self.input_surface_color,
-                    button_color=self.input_surface_color,
-                    button_hover_color="#2B2E36",
-                    corner_radius=12,
+                    command=lambda value, key=field_key: self._on_mapping_change(key, value),
+                    base_fg_color=self.input_surface_color,
+                    hover_fg_color="#2B2E36",
+                    border_color=self.input_surface_color,
+                    dropdown_bg_color=self.input_surface_color,
                 )
                 combo.grid(row=row, column=1, sticky="ew", padx=(0, 20), pady=(0, 8))
-                combo.set(self.mapping_placeholder)
-                combo.configure(command=lambda value, key=field_key: self._on_mapping_change(key, value))
                 self.mapping_controls[field_key] = combo
 
                 hint = CTkLabel(
@@ -493,12 +490,12 @@ class SettingsWindow(CTkToplevel):
             justify="left",
         ).pack(anchor="w", pady=(6, 0))
 
-        body = CTkFrame(frame, fg_color="transparent")
-        body.pack(fill="both", expand=True, padx=28, pady=(8, 28))
+        body = CTkScrollableFrame(frame, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=12, pady=(8, 28))
         body.grid_columnconfigure(0, weight=1)
 
         toggles_card = CTkFrame(body, fg_color=self.surface_muted_color, corner_radius=20)
-        toggles_card.pack(fill="x", pady=(0, 20))
+        toggles_card.pack(fill="x", expand=True, padx=16, pady=(0, 20))
 
         CTkLabel(
             toggles_card,
@@ -514,18 +511,18 @@ class SettingsWindow(CTkToplevel):
         self._add_toggle_row(
             toggles_inner,
             title="Enable Exam Column",
-            description="Collect exam grades alongside attendance so exports stay complete.",
+            description="Include exam grades",
             variable=self.var_exam,
         )
         self._add_toggle_row(
             toggles_inner,
             title="Enable Homework Column",
-            description="Track homework completion in the same sheet when exporting data.",
+            description="Include homework completion",
             variable=self.var_homework,
         )
 
         format_card = CTkFrame(body, fg_color=self.surface_muted_color, corner_radius=20)
-        format_card.pack(fill="x")
+        format_card.pack(fill="x", expand=True, padx=16)
 
         CTkLabel(
             format_card,
@@ -563,17 +560,33 @@ class SettingsWindow(CTkToplevel):
         row = CTkFrame(parent, fg_color=self.input_surface_color, corner_radius=16)
         row.pack(fill="x", pady=8)
         row.grid_columnconfigure(0, weight=1)
+        row.grid_columnconfigure(1, weight=0)
+
+        text_frame = CTkFrame(row, fg_color="transparent")
+        text_frame.grid(row=0, column=0, sticky="w", padx=16, pady=(14, 14))
 
         CTkLabel(
-            row,
+            text_frame,
             text=title,
             font=ctk.CTkFont(size=15, weight="bold"),
             text_color="#FFFFFF",
             anchor="w",
-        ).grid(row=0, column=0, sticky="w", padx=16, pady=(14, 0))
+        ).pack(anchor="w")
+
+        CTkLabel(
+            text_frame,
+            text=description,
+            justify="left",
+            text_color="#BEBEBE",
+            wraplength=420,
+        ).pack(anchor="w", pady=(4, 0))
+
+        switch_frame = CTkFrame(row, fg_color="transparent")
+        switch_frame.grid(row=0, column=1, sticky="ns", padx=16)
+        switch_frame.grid_rowconfigure(0, weight=1)
 
         CTkSwitch(
-            row,
+            switch_frame,
             text="",
             variable=variable,
             command=self._update_apply_state,
@@ -581,15 +594,7 @@ class SettingsWindow(CTkToplevel):
             fg_color="#40464F",
             button_color="#FFFFFF",
             button_hover_color="#D7E3F8",
-        ).grid(row=0, column=1, sticky="e", padx=16, pady=12)
-
-        CTkLabel(
-            row,
-            text=description,
-            justify="left",
-            text_color="#BEBEBE",
-            wraplength=420,
-        ).grid(row=1, column=0, columnspan=2, sticky="w", padx=16, pady=(4, 14))
+        ).grid(row=0, column=0, sticky="")
 
     def _populate_option_rows(self, container, rows_dict, items, remove_callback):
         for child in container.winfo_children():
@@ -862,7 +867,7 @@ class SettingsWindow(CTkToplevel):
                 combo.configure(border_color="#F28D35", border_width=2)
             else:
                 hint_label.configure(text="")
-                combo.configure(border_width=0)
+                combo.configure(border_width=1, border_color=self.input_surface_color)
 
     def _update_template_status_display(self, is_valid=None):
         if is_valid is None:
@@ -906,6 +911,11 @@ class SettingsWindow(CTkToplevel):
         self._refresh_mapping_hints()
         is_valid = self._is_mapping_valid()
         has_changes = self._has_changes()
+
+        # Don't change state if the button is in the "Saved!" state
+        if self.apply_button.cget("text") == "Saved!":
+            return
+
         self.apply_button.configure(state="normal" if is_valid and has_changes else "disabled")
         if self.active_section == "template":
             self._update_template_status_display(is_valid)
@@ -948,7 +958,15 @@ class SettingsWindow(CTkToplevel):
 
         if hasattr(self.parent_app, "set_status"):
             self.parent_app.set_status("Settings saved.")
-        self.on_close()
+
+        self.apply_button.configure(text="Saved!", state="disabled")
+
+        def reset_button():
+            if self.apply_button.winfo_exists():
+                self.apply_button.configure(text="Apply")
+                self._update_apply_state()
+
+        self.after(2000, reset_button)
 
     def _cancel(self):
         self.on_close()
