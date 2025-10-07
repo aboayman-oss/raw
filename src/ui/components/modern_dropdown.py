@@ -513,17 +513,17 @@ class ModernDropdown(ctk.CTkFrame):
 
     def _on_mouse_wheel(self, event) -> str:
         if not self._options_frame or not isinstance(self._options_frame, ctk.CTkScrollableFrame):
-            return ""
+            return "break"  # Block scroll even if not scrollable frame
 
         scrollable_frame = self._options_frame
         start, end = scrollable_frame._parent_canvas.yview()
 
-        # If the scrollable area is not fully visible, scroll it and stop propagation.
+        # If the scrollable area is not at its boundary, scroll it.
         if (event.delta > 0 and start > 0.0) or (event.delta < 0 and end < 1.0):
             scrollable_frame._parent_canvas.yview_scroll(int(-1 * (event.delta / 20)), "units")
-            return "break"
 
-        return ""
+        # Always stop the event from propagating to the parent, even at boundaries.
+        return "break"
 
     @staticmethod
     def _is_descendant(widget, ancestor) -> bool:
