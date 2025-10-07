@@ -351,6 +351,22 @@ class ModernDropdown(ctk.CTkFrame):
         self._run_open_animation(0)
         self._apply_base_color()
 
+        # Bind mouse wheel events to prevent background scrolling
+        if self._options_frame:
+            widgets_to_bind = [self._options_frame, self._dropdown_container, self._dropdown_window]
+            if isinstance(self._options_frame, ctk.CTkScrollableFrame):
+                widgets_to_bind.append(self._options_frame._parent_canvas)
+                vbar = getattr(self._options_frame, "_vbar", None)
+                if vbar:
+                    widgets_to_bind.append(vbar)
+
+            for widget in widgets_to_bind:
+                if widget:
+                    widget.bind("<MouseWheel>", self._on_mouse_wheel, add="+")
+
+            for button in self._option_buttons:
+                button.bind("<MouseWheel>", self._on_mouse_wheel, add="+")
+
     def _close_dropdown(self, *, animated: bool) -> None:
         if not self._dropdown_window:
             return
@@ -494,6 +510,20 @@ class ModernDropdown(ctk.CTkFrame):
         if self._is_descendant(widget, self):
             return
         self.after(0, lambda: self._close_dropdown(animated=True))
+
+    def _on_mouse_wheel(self, event) -> str:
+        if not self._options_frame or not isinstance(self._options_frame, ctk.CTkScrollableFrame):
+            return ""
+
+        scrollable_frame = self._options_frame
+        start, end = scrollable_frame._parent_canvas.yview()
+
+        # If the scrollable area is not fully visible, scroll it and stop propagation.
+        if (event.delta > 0 and start > 0.0) or (event.delta < 0 and end < 1.0):
+            scrollable_frame._parent_canvas.yview_scroll(int(-1 * (event.delta / 20)), "units")
+            return "break"
+
+        return ""
 
     @staticmethod
     def _is_descendant(widget, ancestor) -> bool:
