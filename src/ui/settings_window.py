@@ -14,7 +14,6 @@ from customtkinter import (
     CTkScrollableFrame,
     CTkSegmentedButton,
     CTkSwitch,
-    CTkTabview,
     CTkToplevel,
 )
 from PIL import Image
@@ -718,6 +717,7 @@ class SettingsWindow(CTkToplevel):
         self.stage_items.append(value)
         self._create_option_row(self.stage_scroll, self.stage_rows, value, self._remove_stage_value, animate=True)
         self.stage_entry.delete(0, "end")
+        self._update_apply_state()
 
     def _remove_stage_value(self, value):
         if value not in self.stage_items:
@@ -726,6 +726,7 @@ class SettingsWindow(CTkToplevel):
         row = self.stage_rows.pop(value, None)
         if row and row.winfo_exists():
             row.destroy()
+        self._update_apply_state()
 
     def _add_center(self):
         value = self.center_entry.get().strip()
@@ -736,8 +737,11 @@ class SettingsWindow(CTkToplevel):
             self.center_entry.delete(0, "end")
             return
         self.center_items.append(value)
-        self._create_option_row(self.center_scroll, self.center_rows, value, self._remove_center_value, animate=True)
+        self._create_option_row(
+            self.center_scroll, self.center_rows, value, self._remove_center_value, animate=True
+        )
         self.center_entry.delete(0, "end")
+        self._update_apply_state()
 
     def _remove_center_value(self, value):
         if value not in self.center_items:
@@ -746,6 +750,7 @@ class SettingsWindow(CTkToplevel):
         row = self.center_rows.pop(value, None)
         if row and row.winfo_exists():
             row.destroy()
+        self._update_apply_state()
 
     def _populate_template_controls(self):
         available = []
@@ -803,10 +808,18 @@ class SettingsWindow(CTkToplevel):
 
     def _is_mapping_valid(self):
         mapping = self._collect_mapping()
-        values = [value for value in mapping.values() if value]
-        if len(values) != len(self.mapping_fields):
+        # All fields except optional exam/homework must be mapped
+        required_fields = [fk for _, fk in self.mapping_fields if fk not in ("exam", "homework")]
+        for field_key in required_fields:
+            if not mapping.get(field_key):
+                return False
+
+        # All mapped values must be unique
+        mapped_values = [v for v in mapping.values() if v]
+        if len(mapped_values) != len(set(mapped_values)):
             return False
-        return len(values) == len(set(values))
+
+        return True
 
     def _refresh_mapping_hints(self):
         mapping = self._collect_mapping()
@@ -825,42 +838,72 @@ class SettingsWindow(CTkToplevel):
         for field_key, hint_label in self.mapping_hint_labels.items():
             combo = self.mapping_controls[field_key]
             current_value = mapping.get(field_key, "")
+            is_required = field_key not in ("exam", "homework")
+
             if current_value and field_key in conflicts:
                 others = [
                     self.mapping_labels[other]
                     for other in value_to_fields.get(current_value, [])
                     if other != field_key
                 ]
-                if not others:
-                    others = [
-                        self.mapping_labels[other]
-                        for other in value_to_fields.get(current_value, [])
-                    ]
                 hint_label.configure(
                     text=f"Already used by {', '.join(others)}." if others else "Duplicate selection.",
                     text_color="#F28D35",
                 )
                 combo.configure(border_color="#F28D35", border_width=2)
+            elif not current_value and is_required and self.mapping_columns:
+                hint_label.configure(text="This field is required.", text_color="#F28D35")
+                combo.configure(border_color="#F28D35", border_width=2)
             else:
                 hint_label.configure(text="")
-                combo.configure(border_color="#2B2B2B", border_width=1)
+                combo.configure(border_width=0)
 
     def _update_template_status_display(self, is_valid=None):
         if is_valid is None:
             is_valid = self._is_mapping_valid()
-        icon_key = "ok" if is_valid else "info"
+
         if not self.mapping_columns:
-            icon_key = "info"
-        icon = self.status_icons.get(icon_key)
+            style = self.template_status_styles["info"]
+            icon = self.status_icons["info"]
+        elif is_valid:
+            style = self.template_status_styles["ok"]
+            icon = self.status_icons["ok"]
+        else:
+            style = self.template_status_styles["warn"]
+            icon = self.status_icons["info"]
+
+        self.template_status_card.configure(fg_color=style["bg"])
+        self.template_status_text.configure(text_color=style["text"])
         if icon:
             self.template_status_icon_label.configure(image=icon)
             self.template_status_icon_label.image = icon
 
-    def _update_apply_state(self):
+    def _has_changes(self):
+        # Check mapping
+        if self.working_mapping != self.column_map:
+            return True
+        # Check stage/center options
+        if set(self.stage_items) != set(SETTINGS["stage_options"]):
+            return True
+        if set(self.center_items) != set(SETTINGS["center_options"]):
+            return True
+        # Check restrictions
+        if self.var_exam.get() != SETTINGS["restrictions"].get("exam", False):
+            return True
+        if self.var_homework.get() != SETTINGS["restrictions"].get("homework", False):
+            return True
+        # Check file type
+        if self.var_file_type.get().lower() != SETTINGS.get("file_type", "xlsx"):
+            return True
+        return False
+
+    def _update_apply_state(self, *_args):
         self._refresh_mapping_hints()
         is_valid = self._is_mapping_valid()
-        self.apply_button.configure(state="normal" if is_valid else "disabled")
-        self._update_template_status_display(is_valid)
+        has_changes = self._has_changes()
+        self.apply_button.configure(state="normal" if is_valid and has_changes else "disabled")
+        if self.active_section == "template":
+            self._update_template_status_display(is_valid)
 
     def _on_file_type_change(self, value):
         self.var_file_type.set(value)
@@ -868,12 +911,13 @@ class SettingsWindow(CTkToplevel):
 
     def _apply_settings(self):
         if not self._is_mapping_valid():
-            messagebox.showerror("Invalid Mapping", "Each template field must map to a unique column.", parent=self)
+            messagebox.showerror("Invalid Mapping", "Each required field must map to a unique column.", parent=self)
+            self._show_section("template")
             return
 
         mapping = self._collect_mapping()
-        stage_options = list(self.stage_items)
-        center_options = list(self.center_items)
+        stage_options = sorted(list(self.stage_items))
+        center_options = sorted(list(self.center_items))
         restrictions = {
             "exam": bool(self.var_exam.get()),
             "homework": bool(self.var_homework.get()),
@@ -896,20 +940,15 @@ class SettingsWindow(CTkToplevel):
         self.parent_app.column_map = mapping
         self.column_map = dict(mapping)
         self.working_mapping = dict(mapping)
-        self.mapping_columns = [value for value in mapping.values() if value]
 
         if hasattr(self.parent_app, "set_status"):
             self.parent_app.set_status("Settings saved.")
-        messagebox.showinfo("Settings", "Settings saved successfully.", parent=self)
         self.on_close()
 
     def _cancel(self):
-        if hasattr(self.parent_app, "set_status"):
-            self.parent_app.set_status("Settings closed without saving.")
         self.on_close()
 
     def on_close(self):
         if getattr(self.parent_app, "settings_window", None) is self:
             self.parent_app.settings_window = None
         self.destroy()
-
