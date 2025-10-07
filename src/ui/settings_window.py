@@ -347,10 +347,10 @@ class SettingsWindow(CTkToplevel):
                     placeholder=self.mapping_placeholder,
                     values=[self.mapping_placeholder],
                     command=lambda value, key=field_key: self._on_mapping_change(key, value),
-                    base_fg_color=self.input_surface_color,
-                    hover_fg_color="#2B2E36",
-                    border_color=self.input_surface_color,
-                    dropdown_bg_color=self.input_surface_color,
+                    base_fg_color=(self.input_surface_color, self.input_surface_color),
+                    hover_fg_color=("#2B2E36", "#2B2E36"),
+                    border_color=(self.input_surface_color, self.input_surface_color),
+                    dropdown_bg_color=(self.input_surface_color, self.input_surface_color),
                 )
                 combo.grid(row=row, column=1, sticky="ew", padx=(0, 20), pady=(0, 8))
                 self.mapping_controls[field_key] = combo
