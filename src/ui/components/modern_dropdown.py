@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import tkinter as tk
-from typing import Callable, List, Optional, Sequence
+from typing import Callable, List, Optional, Sequence, Union
 
 import customtkinter as ctk
 
@@ -27,15 +27,15 @@ class ModernDropdown(ctk.CTkFrame):
         *,
         command: Optional[Callable[[str], None]] = None,
         font: Optional[ctk.CTkFont] = None,
-        text_color: Sequence[str] = ("#1E293B", "#E2E8F0"),
-        placeholder_color: Sequence[str] = ("#64748B", "#94A3B8"),
-        base_fg_color: Sequence[str] = ("#E8EDF6", "#2C3039"),
-        hover_fg_color: Sequence[str] = ("#F3F6FF", "#353C47"),
-        border_color: Sequence[str] = ("#CBD5E1", "#3D4452"),
-        dropdown_bg_color: Sequence[str] = ("#FFFFFF", "#1F242C"),
-        option_hover_color: Sequence[str] = ("#E1E9F9", "#3A4352"),
-        active_option_color: Sequence[str] = ("#D6E2FB", "#3D485B"),
-        icon_color: Sequence[str] = ("#4B5563", "#A0AEC0"),
+        text_color: tuple[str, str] = ("#1E293B", "#E2E8F0"),
+        placeholder_color: tuple[str, str] = ("#64748B", "#94A3B8"),
+        base_fg_color: tuple[str, str] = ("#E8EDF6", "#2C3039"),
+        hover_fg_color: tuple[str, str] = ("#F3F6FF", "#353C47"),
+        border_color: tuple[str, str] = ("#CBD5E1", "#3D4452"),
+        dropdown_bg_color: tuple[str, str] = ("#FFFFFF", "#1F242C"),
+        option_hover_color: tuple[str, str] = ("#E1E9F9", "#3A4352"),
+        active_option_color: tuple[str, str] = ("#D6E2FB", "#3D485B"),
+        icon_color: tuple[str, str] = ("#4B5563", "#A0AEC0"),
         shadow_color: str = "#000000",
         option_height: int = 30,
         max_visible_items: Optional[int] = 6,
@@ -71,7 +71,7 @@ class ModernDropdown(ctk.CTkFrame):
         self._dropdown_window: Optional[ctk.CTkToplevel] = None
         self._shadow_window: Optional[tk.Toplevel] = None
         self._dropdown_container: Optional[ctk.CTkFrame] = None
-        self._options_frame: Optional[ctk.CTkFrame] = None
+        self._options_frame: Optional[Union[ctk.CTkFrame, ctk.CTkScrollableFrame]] = None
         self._option_buttons: List[ctk.CTkButton] = []
         self._global_click_bind_id: Optional[str] = None
         self._animation_after_id: Optional[str] = None
@@ -124,7 +124,7 @@ class ModernDropdown(ctk.CTkFrame):
     def get(self) -> str:
         return self._placeholder if self._current_value is None else self._current_value
 
-    def configure(self, **kwargs):
+    def configure(self, require_redraw: bool = False, **kwargs):
         if "command" in kwargs:
             self._command = kwargs.pop("command")
         if "values" in kwargs:
@@ -137,14 +137,14 @@ class ModernDropdown(ctk.CTkFrame):
             self._update_option_states()
             if self._dropdown_window:
                 self._close_dropdown(animated=False)
-        super().configure(**kwargs)
+        super().configure(require_redraw=require_redraw, **kwargs)
 
-    def cget(self, key):
-        if key == "values":
+    def cget(self, attribute_name: str):
+        if attribute_name == "values":
             return [self._placeholder, *self._values]
-        if key == "command":
+        if attribute_name == "command":
             return self._command
-        return super().cget(key)
+        return super().cget(attribute_name)
 
     # Event handlers -----------------------------------------------------
 
@@ -203,7 +203,7 @@ class ModernDropdown(ctk.CTkFrame):
         )
 
     def _resolve_color(self, value):
-        if isinstance(value, tuple):
+        if isinstance(value, (list, tuple)):
             return value[0] if ctk.get_appearance_mode().lower() == "light" else value[1]
         return value
 
@@ -213,9 +213,15 @@ class ModernDropdown(ctk.CTkFrame):
             return self._measured_width
         measure = getattr(self._font, "measure", None)
         if callable(measure):
-            longest = max(measure(sample) for sample in text_samples)
+            # measure() returns a float, but we need to ensure it's convertible to int
+            measurements = []
+            for sample in text_samples:
+                result = measure(sample)
+                if result is not None and isinstance(result, (int, float)):
+                    measurements.append(int(float(result)))
+            longest = max(measurements, default=0)
         else:
-            longest = max(len(sample) for sample in text_samples) * 7
+            longest = max([len(sample) for sample in text_samples], default=0) * 7
         return longest + self._content_padding
 
     def _calculate_total_height(self, item_count: int) -> int:
@@ -294,40 +300,48 @@ class ModernDropdown(ctk.CTkFrame):
                 width=frame_width,
             )
             frame_expand = False
-        self._options_frame.pack(fill="both", expand=frame_expand, padx=6, pady=6)
-        self._options_frame.grid_columnconfigure(0, weight=1)
-        if not needs_scroll:
-            self._options_frame.configure(width=frame_width)
+
+        if self._options_frame:
+            self._options_frame.pack(fill="both", expand=frame_expand, padx=6, pady=6)
+            self._options_frame.grid_columnconfigure(0, weight=1)
+            if not needs_scroll:
+                self._options_frame.configure(width=frame_width)
 
         self._option_buttons = []
-        for index, option in enumerate(self._values):
-            button = ctk.CTkButton(
-                self._options_frame,
-                text=option,
-                anchor="w",
-                height=self._option_height,
-                font=self._font,
-                fg_color=self._active_option_color if option == self._current_value else "transparent",
-                hover_color=self._option_hover_color,
-                text_color=self._text_color,
-                corner_radius=10,
-                border_width=0,
-                command=lambda value=option: self._select(value),
-            )
-            pady = (4 if index == 0 else 2, 4 if index == len(self._values) - 1 else 2)
-            button.grid(row=index, column=0, sticky="ew", padx=10, pady=pady)
-            self._option_buttons.append(button)
+        if self._options_frame:
+            for index, option in enumerate(self._values):
+                button = ctk.CTkButton(
+                    self._options_frame,
+                    text=option,
+                    anchor="w",
+                    height=self._option_height,
+                    font=self._font,
+                    fg_color=self._active_option_color if option == self._current_value else "transparent",
+                    hover_color=self._option_hover_color,
+                    text_color=self._text_color,
+                    corner_radius=10,
+                    border_width=0,
+                    command=lambda value=option: self._select(value),
+                )
+                pady = (4 if index == 0 else 2, 4 if index == len(self._values) - 1 else 2)
+                button.grid(row=index, column=0, sticky="ew", padx=10, pady=pady)
+                self._option_buttons.append(button)
 
         self._dropdown_window.update_idletasks()
-        actual_height = max(container_height, self._dropdown_container.winfo_reqheight())
-        self._dropdown_container.configure(width=width, height=actual_height)
+        if self._dropdown_container:
+            actual_height = max(container_height, self._dropdown_container.winfo_reqheight())
+            self._dropdown_container.configure(width=width, height=actual_height)
+        else:
+            actual_height = container_height
         self._target_geometry = self._compute_target_geometry(width, actual_height)
 
         self._apply_geometry(initial=True)
 
-        self._shadow_window.deiconify()
+        if self._shadow_window:
+            self._shadow_window.deiconify()
         self._dropdown_window.deiconify()
-        self._shadow_window.lift()
+        if self._shadow_window:
+            self._shadow_window.lift()
         self._dropdown_window.lift()
 
         self._closing = False

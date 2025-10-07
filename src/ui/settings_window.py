@@ -83,6 +83,10 @@ class SettingsWindow(CTkToplevel):
         self.center_items = list(SETTINGS["center_options"])
         self.stage_rows = {}
         self.center_rows = {}
+        self.stage_entry = None
+        self.stage_scroll = None
+        self.center_entry = None
+        self.center_scroll = None
 
         self.var_exam = ctk.BooleanVar(value=SETTINGS["restrictions"].get("exam", False))
         self.var_homework = ctk.BooleanVar(value=SETTINGS["restrictions"].get("homework", False))
@@ -288,8 +292,6 @@ class SettingsWindow(CTkToplevel):
         info_icon = self.status_icons.get("info")
         self.template_status_icon_label = CTkLabel(self.template_status_card, text="", image=info_icon)
         self.template_status_icon_label.grid(row=0, column=0, padx=(18, 12), pady=18, sticky="n")
-        if info_icon:
-            self.template_status_icon_label.image = info_icon
 
         self.template_status_text = CTkLabel(
             self.template_status_card,
@@ -707,6 +709,8 @@ class SettingsWindow(CTkToplevel):
         pulse()
 
     def _add_stage(self):
+        if not self.stage_entry:
+            return
         value = self.stage_entry.get().strip()
         if not value:
             return
@@ -729,6 +733,8 @@ class SettingsWindow(CTkToplevel):
         self._update_apply_state()
 
     def _add_center(self):
+        if not self.center_entry:
+            return
         value = self.center_entry.get().strip()
         if not value:
             return
@@ -876,7 +882,6 @@ class SettingsWindow(CTkToplevel):
         self.template_status_text.configure(text_color=style["text"])
         if icon:
             self.template_status_icon_label.configure(image=icon)
-            self.template_status_icon_label.image = icon
 
     def _has_changes(self):
         # Check mapping
