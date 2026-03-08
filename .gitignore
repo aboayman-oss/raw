@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+build/
+dist/
+release/
+Data/
+Sessions/
+Data archive/app_settings.json

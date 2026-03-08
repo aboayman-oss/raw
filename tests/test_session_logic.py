@@ -19,7 +19,14 @@ from core.grade_logic import grade_is_zero, grade_missing_or_zero
 from core.session_mutations import build_manual_add_record, prepare_attendance_update
 from core.scan_workflow import build_focus_action_payload, build_manual_add_default_notes
 from core.scan_view_logic import build_scan_context, collect_missing_tasks, row_matches_filters
-from utils.helpers import SESSION_LAST_ACTION_COL, SESSION_MANUAL_ADDED_COL, compute_session_summary
+from utils.helpers import (
+    APP_STORAGE_DIRNAME,
+    SESSION_LAST_ACTION_COL,
+    SESSION_MANUAL_ADDED_COL,
+    compute_session_summary,
+    resolve_base_folder,
+    sanitize_settings_payload,
+)
 
 
 class SessionLogicTests(unittest.TestCase):
@@ -42,6 +49,32 @@ class SessionLogicTests(unittest.TestCase):
 
         self.assertEqual(state["buttons"], ["cancel"])
         self.assertEqual(state["exam"]["text"], "Not Submitted")
+
+    def test_resolve_base_folder_uses_runtime_dir_for_writable_frozen_build(self):
+        resolved = resolve_base_folder(
+            r"C:\Apps\RFIDAttendanceManager",
+            frozen=True,
+            is_writable=True,
+            local_appdata=r"C:\Users\Ahmed\AppData\Local",
+        )
+        self.assertEqual(resolved, r"C:\Apps\RFIDAttendanceManager")
+
+    def test_resolve_base_folder_falls_back_to_local_appdata_when_read_only(self):
+        resolved = resolve_base_folder(
+            r"C:\Program Files\RFIDAttendanceManager",
+            frozen=True,
+            is_writable=False,
+            local_appdata=r"C:\Users\Ahmed\AppData\Local",
+        )
+        self.assertEqual(resolved, rf"C:\Users\Ahmed\AppData\Local\{APP_STORAGE_DIRNAME}")
+
+    def test_sanitize_settings_payload_resets_sessions_folder(self):
+        settings = sanitize_settings_payload(
+            {"sessions_folder": r"D:\Old", "file_type": "xlsx"},
+            r"C:\Users\Ahmed\Attendance\Sessions",
+        )
+        self.assertEqual(settings["sessions_folder"], r"C:\Users\Ahmed\Attendance\Sessions")
+        self.assertEqual(settings["file_type"], "xlsx")
 
     def test_scan_filter_helpers_toggle_and_clear(self):
         filters = {

@@ -2,7 +2,9 @@
 import ctypes
 import json
 import os
+import shutil
 import sys
+import tempfile
 from ctypes import byref, c_int, c_uint, c_void_p, c_size_t, wintypes
 from pathlib import Path
 
@@ -19,6 +21,8 @@ DWMWA_TEXT_COLOR = 36
 WCA_USEDARKMODECOLORS = 26
 
 _DARK_MODE_APP_INITIALIZED = False
+APP_STORAGE_DIRNAME = 'RFID Attendance Manager'
+DEFAULTS_FOLDER_NAME = 'defaults'
 
 
 class WINDOWCOMPOSITIONATTRIBDATA(ctypes.Structure):
@@ -31,6 +35,28 @@ def get_runtime_base():
         return os.path.dirname(sys.executable)
     module_dir = Path(__file__).resolve().parent
     return str(module_dir.parent)
+
+
+def is_directory_writable(path):
+    try:
+        os.makedirs(path, exist_ok=True)
+        fd, probe_path = tempfile.mkstemp(prefix='.write_test_', dir=path)
+        os.close(fd)
+        os.remove(probe_path)
+        return True
+    except OSError:
+        return False
+
+
+def resolve_base_folder(runtime_base, *, frozen, is_writable, local_appdata=None):
+    if not frozen:
+        return os.path.dirname(runtime_base)
+    if is_writable:
+        return runtime_base
+    appdata_root = local_appdata or os.environ.get('LOCALAPPDATA')
+    if not appdata_root:
+        appdata_root = os.path.join(str(Path.home()), 'AppData', 'Local')
+    return os.path.join(appdata_root, APP_STORAGE_DIRNAME)
 
 
 def get_assets_dir():
@@ -54,18 +80,33 @@ def get_assets_dir():
     return local_assets
 
 
+def get_defaults_dir():
+    """Locate packaged defaults used to seed writable runtime data files."""
+    if getattr(sys, 'frozen', False):
+        base = getattr(sys, '_MEIPASS', get_runtime_base())
+        return os.path.join(base, DEFAULTS_FOLDER_NAME)
+    project_root = os.path.dirname(get_runtime_base())
+    return os.path.join(project_root, 'Data archive')
+
+
+def get_base_folder():
+    runtime_base = get_runtime_base()
+    frozen = bool(getattr(sys, 'frozen', False))
+    writable = is_directory_writable(runtime_base) if frozen else True
+    base_folder = resolve_base_folder(runtime_base, frozen=frozen, is_writable=writable)
+    os.makedirs(base_folder, exist_ok=True)
+    return base_folder
+
+
 RUNTIME_BASE = get_runtime_base()
 # Assets live beside the script during development and inside the temporary
 # PyInstaller bundle when frozen, so we centralize their path resolution above.
 ASSETS_DIR = get_assets_dir()
-
-if getattr(sys, 'frozen', False):
-    # Keep user-generated data next to the executable for portability.
-    BASE_FOLDER = RUNTIME_BASE
-else:
-    BASE_FOLDER = os.path.dirname(ASSETS_DIR)
+DEFAULTS_DIR = get_defaults_dir()
+BASE_FOLDER = get_base_folder()
 
 LOGO_FILE        = os.path.join(ASSETS_DIR, 'logo.png')
+APP_ICON_FILE = os.path.join(ASSETS_DIR, 'app_icon.ico')
 PAST_SESSIONS_ICON_FILE = os.path.join(ASSETS_DIR, 'past sessions.png')
 SETTINGS_ICON_FILE = os.path.join(ASSETS_DIR, 'settings.png')
 IMPORT_ICON_FILE = os.path.join(ASSETS_DIR, 'import.png')
@@ -87,6 +128,7 @@ DEFAULT_SESSIONS_FOLDER = os.path.join(BASE_FOLDER, 'Sessions')
 ARCHIVE_FOLDER   = os.path.join(BASE_FOLDER, 'Data archive')
 MAPPING_FILE     = os.path.join(ARCHIVE_FOLDER, 'column_map.json')
 SETTINGS_FILE    = os.path.join(ARCHIVE_FOLDER, 'app_settings.json')
+COLUMN_MAP_TEMPLATE_FILE = os.path.join(DEFAULTS_DIR, 'column_map.json')
 
 MIN_DASHBOARD_SIZE     = (980, 640)
 MIN_SCAN_SIZE          = (900, 560)
@@ -94,8 +136,6 @@ MIN_SETTINGS_SIZE      = (640, 480)
 MIN_SESSION_SETUP_SIZE = (360, 240)
 MIN_SUMMARY_SIZE       = (380, 320)
 MIN_PAST_SESSIONS_SIZE = (720, 480)
-for folder in (DATA_FOLDER, DEFAULT_SESSIONS_FOLDER, ARCHIVE_FOLDER):
-    os.makedirs(folder, exist_ok=True)
 
 SETTINGS = {
     "sessions_folder": DEFAULT_SESSIONS_FOLDER,
@@ -108,6 +148,37 @@ SETTINGS = {
     "file_type": "xlsx"
 
 }
+
+
+def sanitize_settings_payload(settings, default_sessions_folder):
+    payload = dict(settings or {})
+    payload["sessions_folder"] = default_sessions_folder
+    return payload
+
+
+def _seed_file_if_missing(source_path, target_path):
+    if os.path.exists(target_path) or not os.path.exists(source_path):
+        return
+    shutil.copyfile(source_path, target_path)
+
+
+def _seed_settings_file_if_missing():
+    if os.path.exists(SETTINGS_FILE):
+        return
+    with open(SETTINGS_FILE, 'w', encoding='utf-8') as handle:
+        json.dump(
+            sanitize_settings_payload(SETTINGS, DEFAULT_SESSIONS_FOLDER),
+            handle,
+            indent=2,
+            ensure_ascii=False,
+        )
+
+
+for folder in (DATA_FOLDER, DEFAULT_SESSIONS_FOLDER, ARCHIVE_FOLDER):
+    os.makedirs(folder, exist_ok=True)
+
+_seed_file_if_missing(COLUMN_MAP_TEMPLATE_FILE, MAPPING_FILE)
+_seed_settings_file_if_missing()
 
 
 """Session folder helpers"""

@@ -1,0 +1,23 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="56" y1="44" x2="436" y2="468" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0F5B73"/>
+      <stop offset="1" stop-color="#27B89A"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="116" y1="108" x2="382" y2="360" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F7FBFC"/>
+      <stop offset="1" stop-color="#DCEEEF"/>
+    </linearGradient>
+  </defs>
+  <rect x="36" y="36" width="440" height="440" rx="110" fill="url(#bg)"/>
+  <rect x="102" y="102" width="308" height="278" rx="40" fill="url(#panel)"/>
+  <rect x="102" y="102" width="308" height="62" rx="40" fill="#12495D"/>
+  <circle cx="174" cy="133" r="12" fill="#9FE6D7"/>
+  <circle cx="222" cy="133" r="12" fill="#9FE6D7"/>
+  <rect x="142" y="206" width="112" height="18" rx="9" fill="#8CB8BF"/>
+  <rect x="142" y="252" width="90" height="18" rx="9" fill="#8CB8BF"/>
+  <circle cx="190" cy="314" r="36" fill="#12495D"/>
+  <path d="M190 358C164.595 358 144 378.595 144 404V410H236V404C236 378.595 215.405 358 190 358Z" fill="#12495D"/>
+  <circle cx="328" cy="290" r="72" fill="#17A47F"/>
+  <path d="M296 289.5L320.5 314L362 270.5" stroke="white" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

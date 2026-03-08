@@ -19,6 +19,7 @@ from ui.scan_window import ScanWindow
 from ui.settings_window import SettingsWindow
 from ui.components.past_session_list_item import PastSessionListItem
 from utils.helpers import (
+    APP_ICON_FILE,
     DEFAULT_SESSIONS_FOLDER,
     FOLDER_OPEN_ICON_FILE,
     LOGO_FILE,
@@ -52,6 +53,7 @@ class App(CTk):
         # ------------------------
 
         self.title("RFID Attendance Manager")
+        self._apply_window_icon()
         set_dark_title_bar(self)
         self.column_map = {}
         self.data_df    = None
@@ -91,6 +93,14 @@ class App(CTk):
         self.minsize(width, height)
         self._reset_loaded_data_state()
         self.after(150, self._maybe_prompt_for_sessions_folder)
+
+    def _apply_window_icon(self):
+        if not os.path.exists(APP_ICON_FILE):
+            return
+        try:
+            self.iconbitmap(APP_ICON_FILE)
+        except Exception as exc:
+            print(f"Warning: Could not apply app icon: {exc}")
 
     def _create_icon(self, icon_path, size=(24, 24)):
         try:
