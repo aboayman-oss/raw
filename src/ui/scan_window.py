@@ -7,6 +7,7 @@ encapsulated within this file, primarily in the `scan_focus_` prefixed methods.
 """
 import os
 from datetime import datetime
+from time import monotonic
 from tkinter import messagebox, ttk
 
 import customtkinter as ctk
@@ -103,6 +104,18 @@ AUTO_ATTEND_FLASH_BG = "#244b31"
 AUTO_ATTEND_FLASH_FG = "#ffffff"
 AUTO_ATTEND_FLASH_DURATION_MS = 900
 SESSION_SAVE_DEBOUNCE_MS = 800
+SCAN_CAPTURE_MAX_GAP_SEC = 0.12
+SCAN_CAPTURE_MIN_LENGTH = 2
+SCAN_ALLOWED_CHARS = set("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_")
+SCAN_SUFFIX_KEYSYMS = {"Return", "KP_Enter", "Tab", "ISO_Left_Tab"}
+
+CONTROL_SHORTCUT_KEYS = {
+    "focus_scan": {"s", "س", "arabic_seen", "keycode:83"},
+    "select_all": {"a", "ش", "arabic_sheen", "keycode:65"},
+    "copy": {"c", "ؤ", "arabic_hamzaonwaw", "keycode:67"},
+    "paste": {"v", "ر", "arabic_ra", "keycode:86"},
+    "cut": {"x", "ء", "arabic_hamza", "keycode:88"},
+}
 
 class ScanWindow(CTkToplevel):
     def _reset_treeview_sort(self):
@@ -127,7 +140,6 @@ class ScanWindow(CTkToplevel):
         self.state('zoomed')
         self.bind("<F11>", self.toggle_fullscreen)
         self.bind("<Escape>", self.toggle_fullscreen)
-        self.bind("<Control-KeyPress>", self._on_ctrl_keypress)
         self.restrictions = self.sm.restrictions
         self.df = read_data(self.sm.session_path).fillna("")
         self.mapping = self.sm.mapping or {col: col for col in self.df.columns}
@@ -165,6 +177,11 @@ class ScanWindow(CTkToplevel):
         self._row_flash_jobs = {}
         self._notes_placeholder_active = False
         self._pending_session_save_job = None
+        self._pending_scan_queue = []
+        self._global_scan_buffer = ""
+        self._global_scan_last_key_at = None
+        self._global_scan_source_widget = None
+        self._global_scan_intercepting = False
         self.stats_strip = None
 
         self._build_ui()
@@ -174,6 +191,8 @@ class ScanWindow(CTkToplevel):
         ensure_initial_size(self, min_size=MIN_SCAN_SIZE)
 
         if not self.read_only:
+            self.bind_all("<Control-KeyPress>", self._on_ctrl_keypress, add="+")
+            self.bind_all("<KeyPress>", self._on_global_keypress, add="+")
             self.bind_all("<FocusIn>", self._global_focus_in, add="+")
             self.scan_entry.focus_set()
 
@@ -304,37 +323,241 @@ class ScanWindow(CTkToplevel):
         )
 
         # Bind Arabic-specific shortcuts to the notes widget
-        # Ctrl+ش (Arabic for 'A') should trigger "Select All"
-        self.focus_view.notes.bind("<Control-KeyPress>", self._on_notes_ctrl_keypress)
+        self.focus_view.notes.bind("<Control-KeyPress>", self._on_notes_ctrl_keypress, add="+")
+        self.focus_view.notes._textbox.bind("<Control-KeyPress>", self._on_notes_ctrl_keypress, add="+")
+
+    def _event_belongs_to_scan_window(self, event):
+        widget = getattr(event, "widget", None)
+        if widget is None:
+            return False
+        try:
+            return widget.winfo_toplevel() is self
+        except Exception:
+            return False
+
+    def _widget_descends_from(self, widget, targets):
+        target_set = {target for target in (targets or []) if target is not None}
+        current = widget
+        while current is not None:
+            if current in target_set:
+                return True
+            current = getattr(current, "master", None)
+        return False
+
+    def _shortcut_tokens(self, event):
+        tokens = set()
+        for raw_value in (getattr(event, "char", ""), getattr(event, "keysym", "")):
+            text = str(raw_value or "").strip().lower()
+            if text:
+                tokens.add(text)
+        keycode = getattr(event, "keycode", None)
+        if keycode not in (None, ""):
+            tokens.add(f"keycode:{keycode}")
+        return tokens
+
+    def _matches_shortcut(self, event, action_name):
+        return bool(self._shortcut_tokens(event) & CONTROL_SHORTCUT_KEYS[action_name])
+
+    def _is_scan_suffix_event(self, event):
+        keysym = str(getattr(event, "keysym", "") or "")
+        char = str(getattr(event, "char", "") or "")
+        return keysym in SCAN_SUFFIX_KEYSYMS or char == "\t"
+
+    def _reset_global_scan_capture(self):
+        self._global_scan_buffer = ""
+        self._global_scan_last_key_at = None
+        self._global_scan_source_widget = None
+        self._global_scan_intercepting = False
+
+    def _event_has_modifier(self, event):
+        state = int(getattr(event, "state", 0) or 0)
+        control_mask = 0x0004
+        alt_mask = 0x0008 | 0x20000
+        return bool(state & (control_mask | alt_mask))
+
+    def _editable_widget_kind(self, widget):
+        if widget is None:
+            return None
+        try:
+            widget_class = str(widget.winfo_class()).lower()
+        except Exception:
+            return None
+        if widget_class in {"entry", "tentry"}:
+            return "entry"
+        if widget_class == "text":
+            return "text"
+        return None
+
+    def _remove_captured_text_from_widget(self, widget, captured_text):
+        if not captured_text or widget is None:
+            return
+        kind = self._editable_widget_kind(widget)
+        if kind == "entry":
+            try:
+                insert_index = int(widget.index("insert"))
+                start_index = max(insert_index - len(captured_text), 0)
+                widget.delete(start_index, insert_index)
+            except Exception:
+                pass
+            return
+        if kind == "text":
+            try:
+                insert_index = widget.index("insert")
+                widget.delete(f"{insert_index}-{len(captured_text)}c", insert_index)
+            except Exception:
+                pass
+
+    def _normalize_scanned_card(self, value):
+        return self.scan_normalize_card(value)
+
+    def _enqueue_scanned_card(self, normalized_card):
+        current_card = self._normalize_scanned_card(
+            (self.scan_focus_ctx or {}).get("card_id") or (self.scan_focus_ctx or {}).get("card_display") or (self.scan_focus_ctx or {}).get("iid")
+        )
+        if normalized_card and normalized_card == current_card:
+            return False
+        if normalized_card in self._pending_scan_queue:
+            return False
+        self._pending_scan_queue.append(normalized_card)
+        self._refresh_pending_scan_indicator()
+        if hasattr(self.parent, "set_status"):
+            count = len(self._pending_scan_queue)
+            noun = "scan" if count == 1 else "scans"
+            self.parent.set_status(f"Queued card {normalized_card}. {count} pending {noun} waiting in the focus view.")
+        return True
+
+    def _refresh_pending_scan_indicator(self):
+        if hasattr(self, "focus_view") and self.focus_view is not None:
+            self.focus_view.set_queue_status(self._pending_scan_queue)
+
+    def _process_scanned_card(self, card_id, *, queue_if_busy=True):
+        normalized = self._normalize_scanned_card(card_id)
+        if self.read_only or not normalized:
+            return False
+        if queue_if_busy and self._is_focus_view_visible() and self.scan_focus_ctx:
+            return self._enqueue_scanned_card(normalized)
+
+        matches = self.scan_lookup_matches(normalized)
+        if not matches:
+            context = self.scan_build_not_found_context(normalized)
+            self.scan_focus_show(context)
+            return True
+
+        if len(matches) > 1:
+            context = {
+                "card_id": normalized, "card_display": normalized, "name": "Multiple Records Found",
+                "student_id": "", "status": "duplicate", "focus_iids": matches, "skip_filter": True,
+            }
+            self.scan_focus_show(context)
+            return True
+
+        self.scan_on_open_row(matches[0], source="scan", card_id=normalized)
+        return True
+
+    def _process_next_queued_scan(self):
+        if self.read_only or self._is_focus_view_visible() or not self._pending_scan_queue:
+            self._refresh_pending_scan_indicator()
+            return False
+        next_card = self._pending_scan_queue.pop(0)
+        self._refresh_pending_scan_indicator()
+        if hasattr(self.parent, "set_status"):
+            remaining = len(self._pending_scan_queue)
+            suffix = f" {remaining} more waiting." if remaining else ""
+            self.parent.set_status(f"Opening queued card {next_card}.{suffix}")
+        return self._process_scanned_card(next_card, queue_if_busy=False)
+
+    def _on_global_keypress(self, event):
+        if self.read_only or not self._event_belongs_to_scan_window(event):
+            return None
+        if self._event_has_modifier(event):
+            return None
+        if self._widget_descends_from(event.widget, [self.scan_entry]):
+            self._reset_global_scan_capture()
+            return None
+
+        now = monotonic()
+        buffer_active = bool(self._global_scan_buffer)
+        within_gap = buffer_active and self._global_scan_last_key_at is not None and (now - self._global_scan_last_key_at) <= SCAN_CAPTURE_MAX_GAP_SEC
+        if buffer_active and (not within_gap or event.widget is not self._global_scan_source_widget):
+            self._reset_global_scan_capture()
+            buffer_active = False
+            within_gap = False
+
+        keysym = str(getattr(event, "keysym", "") or "")
+        char = str(getattr(event, "char", "") or "")
+
+        if self._is_scan_suffix_event(event):
+            if self._global_scan_intercepting and len(self._global_scan_buffer) >= SCAN_CAPTURE_MIN_LENGTH:
+                scanned_card = self._global_scan_buffer
+                self._reset_global_scan_capture()
+                self._process_scanned_card(scanned_card)
+                return "break"
+            self._reset_global_scan_capture()
+            return None
+
+        if len(char) != 1 or char not in SCAN_ALLOWED_CHARS:
+            if not within_gap:
+                self._reset_global_scan_capture()
+            return None
+
+        if not buffer_active:
+            self._global_scan_buffer = char
+            self._global_scan_last_key_at = now
+            self._global_scan_source_widget = event.widget
+            self._global_scan_intercepting = False
+            return None
+
+        if not self._global_scan_intercepting:
+            self._remove_captured_text_from_widget(self._global_scan_source_widget, self._global_scan_buffer)
+            self._global_scan_intercepting = True
+
+        self._global_scan_buffer += char
+        self._global_scan_last_key_at = now
+        return "break"
 
     def _on_ctrl_keypress(self, event):
-        """Handles global Ctrl key-presses for cross-language compatibility."""
-        # For Ctrl+S (focus scan entry) - Arabic 'س'
-        if event.char.lower() in ('s', 'س'):
-            focused_widget = self.focus_get()
-            if isinstance(focused_widget, (CTkEntry, CTkTextbox)):
-                return  # Don't steal focus if the user is typing
+        """Handles global Ctrl shortcuts across English and Arabic keyboard layouts."""
+        if not self._event_belongs_to_scan_window(event):
+            return None
+        if self._matches_shortcut(event, "focus_scan"):
+            if self.read_only:
+                return "break"
             self.scan_entry.focus_set()
+            self.scan_entry.icursor("end")
             return "break"
         return None
 
     def _on_notes_ctrl_keypress(self, event):
-        """Handles Ctrl key-presses in the notes widget for special characters."""
-        char = event.char.lower()
-        widget = event.widget
+        """Handles notes shortcuts with English, Arabic, and mixed-layout support."""
+        if not self._event_belongs_to_scan_window(event):
+            return None
 
-        # Select All: Ctrl+A (English) or Ctrl+ش (Arabic)
-        if char in ('a', 'ش'):
-            self.focus_view.notes._textbox.tag_add("sel", "1.0", "end")
-            return "break"  # Prevents the character from being inserted
-        # Copy: Ctrl+C (English) or Ctrl+ؤ (Arabic)
-        elif char in ('c', 'ؤ'):
-            widget.event_generate("<<Copy>>")
+        text_widget = getattr(self.focus_view.notes, "_textbox", None)
+        if text_widget is None:
+            return None
+
+        if event.widget is not text_widget and event.widget is not self.focus_view.notes:
+            return None
+
+        if self._matches_shortcut(event, "select_all"):
+            text_widget.tag_add("sel", "1.0", "end-1c")
+            text_widget.mark_set("insert", "end-1c")
+            text_widget.see("insert")
             return "break"
-        # Paste: Ctrl+V (English) or Ctrl+ر (Arabic)
-        elif char in ('v', 'ر'):
-            widget.event_generate("<<Paste>>")
+        if self._matches_shortcut(event, "copy"):
+            text_widget.event_generate("<<Copy>>")
             return "break"
+        if self._matches_shortcut(event, "paste"):
+            text_widget.event_generate("<<Paste>>")
+            return "break"
+        if self._matches_shortcut(event, "cut"):
+            text_widget.event_generate("<<Cut>>")
+            return "break"
+        return None
+
+    def _on_scan_entry_submit(self, _event=None):
+        self.scan_on_scan()
+        return "break"
         
     def _on_notes_focus_in(self, event):
         self._pause_focus_guard()
@@ -401,6 +624,7 @@ class ScanWindow(CTkToplevel):
 
         # Set status and update dynamic UI parts
         self.focus_view.render_status(build_focus_view_state(status, ctx))
+        self._refresh_pending_scan_indicator()
 
     def scan_focus_clear(self):
         """Hides the Focus View and resets its state."""
@@ -415,8 +639,11 @@ class ScanWindow(CTkToplevel):
         
         if self.focus_view_container:
             self.focus_view_container.grid_remove()
-            
-        self.after(120, self.scan_entry.focus_set)
+
+        if self._pending_scan_queue:
+            self.after_idle(self._process_next_queued_scan)
+        else:
+            self.after(120, self.scan_entry.focus_set)
 
     # --------------------------------------------------------------------------
     # Original ScanWindow methods (unchanged unless necessary for integration)
@@ -459,7 +686,9 @@ class ScanWindow(CTkToplevel):
         scan_icon_label.pack(side="left", padx=(0, 8))
         self.scan_entry = CTkEntry(scan_entry_frame, width=260, height=44, placeholder_text="Scan card ID (press Ctrl+S)", font=("Roboto", 14))
         self.scan_entry.pack(side="left", padx=(0, 0), pady=0)
-        self.scan_entry.bind("<Return>", lambda _e: self.scan_on_scan())
+        self.scan_entry.bind("<Return>", self._on_scan_entry_submit)
+        self.scan_entry.bind("<KP_Enter>", self._on_scan_entry_submit)
+        self.scan_entry.bind("<Tab>", self._on_scan_entry_submit)
         self.pb = CTkProgressBar(scan_entry_frame, mode="indeterminate", width=260)
         self.pb.pack_forget()
 
@@ -468,7 +697,7 @@ class ScanWindow(CTkToplevel):
         self.add_student_button = CTkButton(top_bar, width=44, height=44, text="", image=add_icon, fg_color="#232a36", corner_radius=22, command=self._on_add_student_flow)
         self.add_student_button.grid(row=0, column=1, sticky="w", padx=(0, 12))
         if self.read_only:
-            self.scan_entry.configure(state="disabled"); self.scan_entry.unbind("<Return>"); self.add_student_button.grid_remove()
+            self.scan_entry.configure(state="disabled"); self.scan_entry.unbind("<Return>"); self.scan_entry.unbind("<KP_Enter>"); self.scan_entry.unbind("<Tab>"); self.add_student_button.grid_remove()
 
         # --- Search & Filter ---
         search_filter_frame = CTkFrame(top_bar, fg_color="transparent")
@@ -827,22 +1056,7 @@ class ScanWindow(CTkToplevel):
         normalized = self.scan_normalize_card(self.scan_entry.get())
         self.scan_entry.delete(0, "end")
         if not normalized: return
-        
-        matches = self.scan_lookup_matches(normalized)
-        if not matches:
-            context = self.scan_build_not_found_context(normalized)
-            self.scan_focus_show(context)
-            return
-        
-        if len(matches) > 1:
-            context = {
-                "card_id": normalized, "card_display": normalized, "name": "Multiple Records Found",
-                "student_id": "", "status": "duplicate", "focus_iids": matches, "skip_filter": True,
-            }
-            self.scan_focus_show(context)
-            return
-        
-        self.scan_on_open_row(matches[0], source="scan", card_id=normalized)
+        self._process_scanned_card(normalized)
 
     def scan_on_row_double_click(self, event):
         if self.read_only: return
@@ -1339,7 +1553,7 @@ class ScanWindow(CTkToplevel):
          if widget is self.tree: return
  
          # This check is still valid for the scan and search entries
-         if widget in {self.scan_entry, *self._search_entries}: return
+         if self._widget_descends_from(widget, [self.scan_entry, *self._search_entries]): return
  
          # FIX 2: Check against the correct Focus View container
          parent = getattr(widget, "master", None)

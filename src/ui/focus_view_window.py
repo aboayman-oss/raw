@@ -74,11 +74,28 @@ class FocusViewWindow:
         )
         self._show_action_buttons(status_state["buttons"])
 
+    def set_queue_status(self, queued_cards):
+        queued = [str(card).strip() for card in (queued_cards or []) if str(card).strip()]
+        if not queued:
+            self.queue_status_label.configure(text="")
+            return
+        count = len(queued)
+        noun = "scan" if count == 1 else "scans"
+        visible_cards = queued[:3]
+        extra_count = count - len(visible_cards)
+        card_lines = [f"- {card}" for card in visible_cards]
+        if extra_count > 0:
+            card_lines.append(f"- +{extra_count} more")
+        self.queue_status_label.configure(
+            text=f"Queued {noun} ({count})\nFinish this student to open the next card automatically.\n" + "\n".join(card_lines)
+        )
+
     def reset_view(self):
         if not self.read_only:
             self.notes.configure(state="normal")
         self.notes.delete("1.0", "end")
         self.set_notes_placeholder()
+        self.set_queue_status([])
         self._show_action_buttons([])
 
     def _render_task_card(self, icon_label, grade_label, card, task_state):
@@ -206,6 +223,16 @@ class FocusViewWindow:
         # --- START: ADD SAVE FEEDBACK LABEL ---
         self.save_feedback_label = CTkLabel(actions_zone, text="", font=("Roboto", 12))
         self.save_feedback_label.grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        self.queue_status_label = CTkLabel(
+            actions_zone,
+            text="",
+            font=("Roboto", 12),
+            text_color="#cac4d0",
+            justify="left",
+            anchor="w",
+            wraplength=340,
+        )
+        self.queue_status_label.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(4, 0))
         # --- END: ADD SAVE FEEDBACK LABEL ---
 
         self.btn_complete = CTkButton(actions_zone, text="Complete & Attend", image=self._load_icon("task_alt.png"), command=self._on_complete)
