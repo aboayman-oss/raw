@@ -11,12 +11,14 @@ from datetime import datetime
 from tkinter import messagebox, ttk
 
 import customtkinter as ctk
+import pandas as pd
 from customtkinter import CTkButton, CTkEntry, CTkFrame, CTkLabel, CTkProgressBar, CTkTextbox, CTkToplevel
 from PIL import Image
 
 from ui.dialogs.add_student_dialog import AddStudentDialog
 from ui.dialogs.confirmation_dialog import ConfirmationDialog
 from utils.helpers import (
+    ASSETS_DIR,
     HOME_BG_FILE,
     MIN_SCAN_SIZE,
     bring_window_to_front,
@@ -95,7 +97,8 @@ def _grade_missing_or_zero(value):
     return _grade_is_zero(text)
 
 # --- Constants for the new Focus View Design ---
-ASSETS_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "assets")
+# Label used when a student is added from a different group
+DIFF_GROUP_NOTE = "(From diff Group)"
 
 # Dark Mode
 DARK_BG = "#1d1b20"
@@ -169,7 +172,6 @@ class ScanWindow(CTkToplevel):
         self.state('zoomed')
         self.bind("<F11>", self.toggle_fullscreen)
         self.bind("<Escape>", self.toggle_fullscreen)
-        # self.bind("<Control-s>", self._on_s_key_press) # Deprecated
         self.bind("<Control-KeyPress>", self._on_ctrl_keypress)
         self.restrictions = self.sm.restrictions
         self.df = read_data(self.sm.session_path).fillna("")
@@ -191,9 +193,6 @@ class ScanWindow(CTkToplevel):
         }
         self._filter_active = False
 
-        # Remove background image; use solid surface panel for contrast
-        self.bg_label = None  # No background image
-
         self.title("Scan Attendance")
         self.protocol("WM_DELETE_WINDOW", self._on_end_scan)
         self.after(50, lambda: bring_window_to_front(self))
@@ -211,6 +210,8 @@ class ScanWindow(CTkToplevel):
         self.scan_focus_timer = None
         self.focus_view_container = None # For integrated view
         self._row_flash_jobs = {}
+        self._notes_placeholder_active = False
+        self._stats_progress_bar = None
         self.stats_vars = {
             "total": ctk.StringVar(value="0"),
             "attended": ctk.StringVar(value="0"),
@@ -382,13 +383,13 @@ class ScanWindow(CTkToplevel):
             return self._icon_cache[(name, size)]
         
         try:
-            img_path = os.path.join(ASSETS_PATH, name)
+            img_path = os.path.join(ASSETS_DIR, name)
             img = Image.open(img_path)
             ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=size)
             self._icon_cache[(name, size)] = ctk_img
             return ctk_img
         except FileNotFoundError:
-            print(f"Warning: Icon '{name}' not found at '{ASSETS_PATH}'")
+            print(f"Warning: Icon '{name}' not found at '{ASSETS_DIR}'")
             # Return a placeholder transparent image
             return ctk.CTkImage(light_image=Image.new("RGBA", size, (0,0,0,0)),
                                 dark_image=Image.new("RGBA", size, (0,0,0,0)),
@@ -446,15 +447,17 @@ class ScanWindow(CTkToplevel):
         
     def _on_notes_focus_in(self, event):
         self._pause_focus_guard()
-        if self.focus_view.notes.get("1.0", "end-1c") == "Add notes here...":
+        if self._notes_placeholder_active:
             self.focus_view.notes.delete("1.0", "end")
             self.focus_view.notes.configure(text_color=DARK_PRIMARY_TEXT)
+            self._notes_placeholder_active = False
 
     def _on_notes_focus_out(self, event):
         self._resume_focus_guard()
         if not self.focus_view.notes.get("1.0", "end-1c"):
             self.focus_view.notes.configure(text_color="gray")
             self.focus_view.notes.insert("1.0", "Add notes here...")
+            self._notes_placeholder_active = True
 
     def scan_focus_show(self, scan_ctx):
         """Shows and populates the Focus View with student data."""
@@ -494,10 +497,12 @@ class ScanWindow(CTkToplevel):
             self.focus_view.notes.configure(text_color=DARK_PRIMARY_TEXT)
             if any('\u0600' <= char <= '\u06FF' for char in str(existing_notes)):
                 self.focus_view.notes._textbox.tag_add("rtl", "1.0", "end")
+            self._notes_placeholder_active = False
         else:
             self.focus_view.notes._textbox.tag_remove("rtl", "1.0", "end")
             self.focus_view.notes.configure(text_color="gray")
             self.focus_view.notes.insert("1.0", "Add notes here...")
+            self._notes_placeholder_active = True
         if self.read_only: self.focus_view.notes.configure(state="disabled")
 
         # Filter the main table view
@@ -598,6 +603,7 @@ class ScanWindow(CTkToplevel):
             self.focus_view.notes.delete("1.0", "end")
             self.focus_view.notes.configure(text_color="gray")
             self.focus_view.notes.insert("1.0", "Add notes here...")
+            self._notes_placeholder_active = True
 
         self.scan_restore_from_focus()
         
@@ -962,7 +968,7 @@ class ScanWindow(CTkToplevel):
             return ""
         raw_text = raw_text.replace("\r\n", "\n")
         candidate = self._clean_value(raw_text)
-        if not candidate or candidate == "Add notes here...":
+        if self._notes_placeholder_active or not candidate:
             return ""
         original_raw = (ctx.get("original_notes") or "").replace("\r\n", "\n")
         original_clean = self._clean_value(original_raw)
@@ -1076,8 +1082,7 @@ class ScanWindow(CTkToplevel):
         if not self.scan_focus_ctx or not self.scan_focus_ctx.get("iid"):
             return False # No student in focus
 
-        raw_note_content = self.focus_view.notes.get("1.0", "end-1c").strip()
-        new_note_content = "" if raw_note_content == "Add notes here..." else raw_note_content
+        new_note_content = "" if self._notes_placeholder_active else self.focus_view.notes.get("1.0", "end-1c").strip()
         original_notes = self.scan_focus_ctx.get("original_notes", "").strip()
 
         # Normalize whitespace for a more reliable comparison
@@ -1113,7 +1118,7 @@ class ScanWindow(CTkToplevel):
         iid = self.scan_focus_ctx.get("iid")
 
         raw_note_content = self.focus_view.notes.get("1.0", "end-1c").strip()
-        new_note_content = "" if raw_note_content == "Add notes here..." else raw_note_content
+        new_note_content = "" if self._notes_placeholder_active else raw_note_content
         original_notes = self.scan_focus_ctx.get("original_notes", "").strip()
 
         # Normalize whitespace for a more reliable comparison to prevent saving unchanged notes
@@ -1273,8 +1278,7 @@ class ScanWindow(CTkToplevel):
         typed = self.scan_collect_new_note(context)
         default_notes = typed
         if not context.get("found", True) or context.get("status") == "not_found":
-            diff_note = "(From diff Group)"
-            default_notes = f"{diff_note} {default_notes}".strip() if default_notes else diff_note
+            default_notes = f"{DIFF_GROUP_NOTE} {default_notes}".strip() if default_notes else DIFF_GROUP_NOTE
         self._launch_add_student_dialog(card_id=card_id, default_notes=default_notes or "")
 
     def scan_focus_on_cancel_attendance(self):
@@ -1337,6 +1341,7 @@ class ScanWindow(CTkToplevel):
                     percent_val = 0.0
                 progress = CTkProgressBar(icon_num_frame, width=40, height=6)
                 progress.set(percent_val)
+                self._stats_progress_bar = progress
                 progress.pack(side="left", anchor="center", padx=(0, 4))
                 CTkLabel(icon_num_frame, textvariable=self.stats_vars["percent"], font=("Roboto", 18, "bold"), text_color="#a9c8e7", anchor="center", justify="center").pack(side="left", anchor="center", padx=(0, 0))
             else:
@@ -1383,7 +1388,6 @@ class ScanWindow(CTkToplevel):
             self._update_row(iid, self.scan_tree_get(iid, "attendance"), self.scan_tree_get(iid, "notes"), self.scan_tree_get(iid, "timestamp"))
 
     def _clean_value(self, value):
-        import pandas as pd
         if value is None or (isinstance(value, float) and pd.isna(value)): return ""
         text = str(value).strip()
         return "" if text.lower() == "nan" else text
@@ -1411,6 +1415,12 @@ class ScanWindow(CTkToplevel):
         self.stats_vars["total"].set(f"{metrics['total']}")
         self.stats_vars["attended"].set(f"{metrics['attended']}")
         self.stats_vars["percent"].set(metrics["attendance_rate"])
+        if self._stats_progress_bar is not None:
+            try:
+                pct = float(metrics["attendance_rate"].replace("%", "")) / 100.0
+            except Exception:
+                pct = 0.0
+            self._stats_progress_bar.set(pct)
         if "missing_exam" in metrics: self.stats_vars["missing_exam"].set(f"{metrics['missing_exam']}")
         if "missing_hw" in metrics: self.stats_vars["missing_hw"].set(f"{metrics['missing_hw']}")
 
@@ -1598,7 +1608,7 @@ class ScanWindow(CTkToplevel):
          self._focus_reset_job = self.after_idle(self._focus_scan_entry)
 
     def _student_id_or_phone_exists(self, student_id, phone):
-        df = read_data(self.sm.session_path)
+        df = self.sm._df
         sid_col, phone_col = self.mapping.get("student_id", "student_id"), self.mapping.get("phone", "phone")
         id_exists = student_id in df[sid_col].astype(str).values if sid_col in df.columns else False
         phone_exists = phone in df[phone_col].astype(str).values if phone_col in df.columns else False

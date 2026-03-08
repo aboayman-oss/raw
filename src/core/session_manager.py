@@ -40,8 +40,10 @@ class SessionManager:
         if directory:
             os.makedirs(directory, exist_ok=True)
 
+        self._df = pd.DataFrame()
         if os.path.exists(self.session_path):
             df = read_data(self.session_path)
+            self._df = df
             # Only keep mapped columns
             mapped_keys = ["card_id", "student_id", "name", "phone", "attendance", "notes"]
             if self.restrictions.get("exam"):
@@ -58,7 +60,7 @@ class SessionManager:
 
 
     def add_record(self, rec):
-        df = read_data(self.session_path)
+        df = self._df
         card_col     = self.mapping.get("card_id", "card_id")
         att_col      = self.mapping.get("attendance", "attendance")
         notes_col    = self.mapping.get("notes", "notes")
@@ -89,3 +91,4 @@ class SessionManager:
             df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
 
         write_data(df, self.session_path)
+        self._df = df

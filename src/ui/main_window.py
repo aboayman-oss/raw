@@ -17,7 +17,6 @@ from ui.dialogs.password_dialog import PasswordDialog
 
 from ui.scan_window import ScanWindow
 from ui.settings_window import SettingsWindow
-from tkinter import messagebox # Ensure this is imported for _clear_all_sessions
 from ui.components.past_session_list_item import PastSessionListItem
 from utils.helpers import (
     DEFAULT_SESSIONS_FOLDER,
@@ -570,8 +569,6 @@ class App(CTk):
         return f"{size_bytes / (1024 * 1024):.2f} MB"
 
     def _clear_all_sessions(self):
-        # NOTE: This method is copied almost verbatim.
-        # It scans the sessions directory and deletes files.
         sessions_dir = get_sessions_folder()
         if not os.path.isdir(sessions_dir):
             return
