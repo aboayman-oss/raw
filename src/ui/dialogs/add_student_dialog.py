@@ -3,7 +3,7 @@ import customtkinter as ctk
 from customtkinter import CTkButton, CTkEntry, CTkFrame, CTkLabel, CTkToplevel, CTkImage
 from PIL import Image # Pillow is required for CTkImage
 
-from utils.helpers import MIN_SUMMARY_SIZE, bring_window_to_front, ensure_initial_size, set_dark_title_bar
+from utils.helpers import MIN_SUMMARY_SIZE, bring_window_to_front, ensure_initial_size, get_asset_path, set_dark_title_bar
 
 class AddStudentDialog(CTkToplevel):
     def __init__(self, parent, *, card_id=None, on_submit=None, duplicate_checker=None, default_notes="Manually added"):
@@ -35,11 +35,11 @@ class AddStudentDialog(CTkToplevel):
         
         # Load the icon (ensure person_add.png is in a reachable path like 'assets/')
         try:
-            add_icon_image = CTkImage(Image.open("assets/person_add.png"), size=(40, 40))
+            add_icon_image = CTkImage(Image.open(get_asset_path("person_add.png")), size=(40, 40))
             icon_label = CTkLabel(header_frame, text="", image=add_icon_image)
             icon_label.grid(row=0, column=0, pady=(0, 12))
         except FileNotFoundError:
-            print("Warning: 'assets/person_add.png' not found. Skipping icon.")
+            print("Warning: 'person_add.png' not found. Skipping icon.")
 
         subtitle_text = "Link a scanned card to a student profile." if self.card_id else "Create a manual record for a student."
         subtitle_label = CTkLabel(header_frame, text=subtitle_text, font=("Roboto", 16))

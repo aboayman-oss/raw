@@ -2,9 +2,13 @@ import os
 from PIL import Image
 import customtkinter as ctk
 from customtkinter import CTkFrame, CTkLabel, CTkTextbox, CTkButton, CTkToplevel
+from utils.helpers import get_asset_path
 
 # Import constants from scan_window or define them here if needed
 # from .scan_window import LIGHT_BG, DARK_BG, LIGHT_PRIMARY_TEXT, DARK_PRIMARY_TEXT, ...
+
+PRIMARY_TEXT = "#e3e2e6"
+PLACEHOLDER_TEXT = "Add notes here..."
 
 class FocusViewWindow:
     def __init__(self, parent, read_only=False, icon_cache=None,
@@ -23,11 +27,92 @@ class FocusViewWindow:
         self._feedback_job = None # To manage the feedback timer
         self._setup_ui()
 
+    def set_student_identity(self, name, font_family, student_id, card_display):
+        self.name_label.configure(text=name, font=(font_family, 32, "bold"))
+        self.id_label.configure(text=f"Student ID: {student_id}  •  Card ID: {card_display}")
+
+    def set_notes_content(self, notes_text, formatted_notes=None, is_rtl=False):
+        if not self.read_only:
+            self.notes.configure(state="normal")
+
+        self.notes.delete("1.0", "end")
+        if notes_text:
+            self.notes.insert("1.0", formatted_notes or notes_text)
+            self.notes.configure(text_color=PRIMARY_TEXT)
+            if is_rtl:
+                self.notes._textbox.tag_add("rtl", "1.0", "end")
+            else:
+                self.notes._textbox.tag_remove("rtl", "1.0", "end")
+            placeholder_active = False
+        else:
+            placeholder_active = self.set_notes_placeholder()
+
+        if self.read_only:
+            self.notes.configure(state="disabled")
+
+        return placeholder_active
+
+    def set_notes_placeholder(self):
+        self.notes._textbox.tag_remove("rtl", "1.0", "end")
+        self.notes.configure(text_color="gray")
+        self.notes.insert("1.0", PLACEHOLDER_TEXT)
+        return True
+
+    def render_status(self, status_state):
+        self.status_icon.configure(image=self._load_icon(status_state["status_icon"], size=(48, 48)))
+        self._render_task_card(
+            self.hw_icon_label,
+            self.hw_grade_label,
+            self.hw_card,
+            status_state["homework"],
+        )
+        self._render_task_card(
+            self.exam_icon_label,
+            self.exam_grade_label,
+            self.exam_card,
+            status_state["exam"],
+        )
+        self._show_action_buttons(status_state["buttons"])
+
+    def reset_view(self):
+        if not self.read_only:
+            self.notes.configure(state="normal")
+        self.notes.delete("1.0", "end")
+        self.set_notes_placeholder()
+        self._show_action_buttons([])
+
+    def _render_task_card(self, icon_label, grade_label, card, task_state):
+        icon_label.configure(image=self._load_icon(task_state["icon"]))
+        grade_label.configure(text=task_state["text"])
+        card.configure(fg_color=task_state["color"])
+
+    def _show_action_buttons(self, button_names):
+        for btn in self.buttons:
+            btn.grid_remove()
+
+        grid_specs = {
+            "deny": {"column": 0, "padx": 2},
+            "override": {"column": 1, "padx": 2},
+            "complete": {"column": 2, "padx": 2},
+            "add_student": {"column": 1, "padx": 2},
+            "cancel": {"column": 1, "padx": 2},
+        }
+        buttons = {
+            "deny": self.btn_deny,
+            "override": self.btn_override,
+            "complete": self.btn_complete,
+            "add_student": self.btn_add_student,
+            "cancel": self.btn_cancel,
+        }
+
+        for name in button_names:
+            buttons[name].grid(row=0, column=grid_specs[name]["column"], sticky="ew", padx=grid_specs[name]["padx"])
+
     def _load_icon(self, name, size=(24, 24)):
         if (name, size) in self._icon_cache:
             return self._icon_cache[(name, size)]
         try:
-            img_path = os.path.join('assets', name)
+            img_path = get_asset_path(name)
             img = Image.open(img_path)
             ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=size)
             self._icon_cache[(name, size)] = ctk_img
@@ -109,7 +194,7 @@ class FocusViewWindow:
         )
         self.notes._textbox.tag_configure("rtl", justify="right")
         self.notes.grid(row=1, column=0, sticky="nsew")
-        self.notes.insert("1.0", "Add notes here...")
+        self.notes.insert("1.0", PLACEHOLDER_TEXT)
         # --- END: NOTES CONTAINER WITH HEADER BAR ---
 
         self.notes.bind("<FocusIn>", self._on_notes_focus_in)
@@ -152,9 +237,9 @@ class FocusViewWindow:
                 btn.configure(state="disabled")
 
     def _on_notes_focus_in(self, event):
-        if self.notes.get("1.0", "end-1c") == "Add notes here...":
+        if self.notes.get("1.0", "end-1c") == PLACEHOLDER_TEXT:
             self.notes.delete("1.0", "end")
-            self.notes.configure(text_color="#FFFFFF")
+            self.notes.configure(text_color=PRIMARY_TEXT)
 
     def _on_notes_focus_out(self, event):
         # First, trigger the save action if the callback exists
@@ -162,9 +247,7 @@ class FocusViewWindow:
             self._on_save_notes()
         # Then, handle the placeholder text logic
         if not self.notes.get("1.0", "end-1c"):
-            self.notes._textbox.tag_remove("rtl", "1.0", "end")
-            self.notes.configure(text_color="gray")
-            self.notes.insert("1.0", "Add notes here...")
+            self.set_notes_placeholder()
 
     def show_save_feedback(self):
         # --- START: NEW METHOD ---

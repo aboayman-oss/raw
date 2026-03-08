@@ -1,12 +1,14 @@
 ﻿"""Shared constants and helpers for the RFID Attendance Manager UI."""
+import ctypes
 import json
 import os
 import sys
-import ctypes
 from ctypes import byref, c_int, c_uint, c_void_p, c_size_t, wintypes
 from pathlib import Path
 
 import pandas as pd
+
+from core.grade_logic import grade_missing_or_zero
 
 INVALID_PATH_CHARS = set('<>::"/\\|?*')
 
@@ -77,12 +79,14 @@ STATUS_INFO_ICON_FILE = os.path.join(ASSETS_DIR, 'warning.png')
 REMOVE_ICON_FILE = os.path.join(ASSETS_DIR, 'close.png')
 PLUS_ICON_FILE = os.path.join(ASSETS_DIR, 'add.png')
 
+SESSION_MANUAL_ADDED_COL = '_manual_added'
+SESSION_LAST_ACTION_COL = '_last_action'
+
 DATA_FOLDER      = os.path.join(BASE_FOLDER, 'Data')
 DEFAULT_SESSIONS_FOLDER = os.path.join(BASE_FOLDER, 'Sessions')
 ARCHIVE_FOLDER   = os.path.join(BASE_FOLDER, 'Data archive')
 MAPPING_FILE     = os.path.join(ARCHIVE_FOLDER, 'column_map.json')
 SETTINGS_FILE    = os.path.join(ARCHIVE_FOLDER, 'app_settings.json')
-LAST_DATA_FILE   = os.path.join(ARCHIVE_FOLDER, 'last_data.json')
 
 MIN_DASHBOARD_SIZE     = (980, 640)
 MIN_SCAN_SIZE          = (900, 560)
@@ -180,10 +184,32 @@ def resolve_session_file_path(name, *, stage=None, center=None, ext='csv', creat
     filename = f"{name}.{ext}"
     return os.path.join(directory, filename)
 
+
+def get_asset_path(name):
+    return os.path.join(ASSETS_DIR, name)
+
+
+def _build_temp_output_path(path):
+    target = Path(path)
+    return str(target.with_name(f"{target.stem}.tmp{target.suffix}"))
+
+
+def save_json(path, payload, *, indent=2):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    temp_path = _build_temp_output_path(path)
+    try:
+        with open(temp_path, "w", encoding="utf-8") as file:
+            json.dump(payload, file, indent=indent)
+        os.replace(temp_path, path)
+    finally:
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
+
 def save_settings():
-    os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
-    with open(SETTINGS_FILE, "w", encoding="utf-8") as file:
-        json.dump(SETTINGS, file, indent=2)
+    save_json(SETTINGS_FILE, SETTINGS)
 
 
 
@@ -402,7 +428,82 @@ def read_data(path, **kwargs):
     return df
 
 def write_data(df, path, **kwargs):
-    if path.lower().endswith(".xlsx"):
-        df.to_excel(path, index=False, **kwargs)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    temp_path = _build_temp_output_path(path)
+    try:
+        if path.lower().endswith(".xlsx"):
+            df.to_excel(temp_path, index=False, **kwargs)
+        else:
+            df.to_csv(temp_path, index=False, **kwargs)
+        os.replace(temp_path, path)
+    finally:
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
+
+
+def _clean_text(value):
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return ""
+    text = str(value).strip()
+    return "" if text.lower() == "nan" else text
+
+
+def _summary_bool_series(series):
+    normalized = series.fillna("").astype(str).str.strip().str.lower()
+    return normalized.isin({"1", "true", "yes", "y"})
+
+
+def compute_session_summary(df, column_map, restrictions):
+    summary = {
+        "total": 0,
+        "attended": 0,
+        "attendance_rate": "0%",
+        "manual_additions": 0,
+        "missing_exam": 0,
+        "missing_hw": 0,
+        "cancellations": 0,
+    }
+    if df is None or df.empty:
+        return summary
+
+    normalized_map = column_map or {}
+    total = len(df.index)
+    att_col = normalized_map.get("attendance", "attendance")
+    notes_col = normalized_map.get("notes", "notes")
+    card_id_col = normalized_map.get("card_id", "card_id")
+    exam_col = normalized_map.get("exam", "exam")
+    hw_col = normalized_map.get("homework", "homework")
+
+    attended = 0
+    if att_col in df.columns:
+        attended = df[att_col].fillna("").astype(str).str.strip().str.lower().eq("attend").sum()
+
+    summary["total"] = total
+    summary["attended"] = int(attended)
+    summary["attendance_rate"] = f"{(attended / total) * 100:.1f}%" if total else "0%"
+
+    if restrictions.get("exam") and exam_col in df.columns:
+        summary["missing_exam"] = int(sum(grade_missing_or_zero(value) for value in df[exam_col]))
+    if restrictions.get("homework") and hw_col in df.columns:
+        summary["missing_hw"] = int(sum(grade_missing_or_zero(value) for value in df[hw_col]))
+
+    if SESSION_MANUAL_ADDED_COL in df.columns:
+        manual_additions = int(_summary_bool_series(df[SESSION_MANUAL_ADDED_COL]).sum())
     else:
-        df.to_csv(path, index=False, **kwargs)
+        notes_series = df[notes_col].fillna("").astype(str) if notes_col in df.columns else pd.Series([""] * total)
+        card_series = df[card_id_col].fillna("").astype(str) if card_id_col in df.columns else pd.Series([""] * total)
+        manual_mask = card_series.str.startswith("Unknown ") | notes_series.str.contains("Manually added|From diff Group", case=False, na=False)
+        manual_additions = int(manual_mask.sum())
+    summary["manual_additions"] = manual_additions
+
+    if SESSION_LAST_ACTION_COL in df.columns:
+        cancellations = df[SESSION_LAST_ACTION_COL].fillna("").astype(str).str.strip().str.lower().eq("canceled").sum()
+    elif notes_col in df.columns:
+        cancellations = df[notes_col].fillna("").astype(str).str.contains("Canceled", case=False, na=False).sum()
+    else:
+        cancellations = 0
+    summary["cancellations"] = int(cancellations)
+    return summary

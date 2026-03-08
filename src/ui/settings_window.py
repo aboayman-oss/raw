@@ -1,5 +1,4 @@
 """Settings window for configuring application preferences."""
-import json
 import os
 from tkinter import filedialog, messagebox
 
@@ -24,11 +23,12 @@ from utils.helpers import (
     PLUS_ICON_FILE,
     REMOVE_ICON_FILE,
     SETTINGS,
-    SETTINGS_FILE,
     STATUS_INFO_ICON_FILE,
     STATUS_OK_ICON_FILE,
     bring_window_to_front,
     read_data,
+    save_json,
+    save_settings,
     set_dark_title_bar,
 )
 
@@ -941,14 +941,12 @@ class SettingsWindow(CTkToplevel):
         file_type = self.var_file_type.get().lower()
 
         try:
-            with open(MAPPING_FILE, "w", encoding="utf-8") as file:
-                json.dump(mapping, file, indent=2)
+            save_json(MAPPING_FILE, mapping)
             SETTINGS["stage_options"] = stage_options
             SETTINGS["center_options"] = center_options
             SETTINGS["restrictions"].update(restrictions)
             SETTINGS["file_type"] = file_type
-            with open(SETTINGS_FILE, "w", encoding="utf-8") as file:
-                json.dump(SETTINGS, file, indent=2)
+            save_settings()
         except OSError as exc:
             messagebox.showerror("Save Failed", str(exc), parent=self)
             return

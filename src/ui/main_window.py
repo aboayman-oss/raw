@@ -21,13 +21,13 @@ from ui.components.past_session_list_item import PastSessionListItem
 from utils.helpers import (
     DEFAULT_SESSIONS_FOLDER,
     FOLDER_OPEN_ICON_FILE,
-    LAST_DATA_FILE,
     LOGO_FILE,
     MAPPING_FILE,
     MIN_DASHBOARD_SIZE,
     SETTINGS,
     SETTINGS_FILE,
     bring_window_to_front,
+    compute_session_summary,
     ensure_initial_size,
     get_sessions_folder,
     read_data,
@@ -58,7 +58,6 @@ class App(CTk):
         self.settings_window = None
         self.current_data_path = None
         self._session_setup = None
-        self.past_sessions_window = None
         self.summary_window = None
         self.dashboard_frame = None
         self.past_sessions_frame = None
@@ -90,7 +89,7 @@ class App(CTk):
         self._build_ui()
         width, height = ensure_initial_size(self, min_size=MIN_DASHBOARD_SIZE)
         self.minsize(width, height)
-        self._load_last_data()
+        self._reset_loaded_data_state()
         self.after(150, self._maybe_prompt_for_sessions_folder)
 
     def _create_icon(self, icon_path, size=(24, 24)):
@@ -172,8 +171,6 @@ class App(CTk):
                 self._refresh_recent_sessions()
             if getattr(self, "sessions_list_frame", None) is not None:
                 self._populate_past_sessions_list(force_scan=True)
-            if self.past_sessions_window is not None and self.past_sessions_window.winfo_exists():
-                self.past_sessions_window.refresh()
         if show_status:
             self.set_status(f"Session folder set to '{resolved}'.")
         return resolved
@@ -518,44 +515,7 @@ class App(CTk):
         try:
             session_name = os.path.splitext(os.path.basename(path_entry))[0]
             df = read_data(path_entry).fillna("")
-
-            # Compute summary metrics from the session DataFrame
-            att_col = self.column_map.get("attendance", "attendance")
-            exam_col = self.column_map.get("exam", "exam")
-            card_id_col = self.column_map.get("card_id", "card_id")
-            hw_col = self.column_map.get("homework", "homework")
-
-            total = len(df)
-            attended = df[att_col].astype(str).str.lower().eq('attend').sum() if att_col in df.columns else 0
-            attendance_rate = f"{(attended / total) * 100:.1f}%" if total > 0 else "0%"
-
-            missing_exam = 0
-            if exam_col in df.columns and SETTINGS["restrictions"].get("exam"):
-                missing_exam = df[exam_col].astype(str).str.strip().replace("", "0").eq("0").sum()
-
-            missing_hw = 0
-            if hw_col in df.columns and SETTINGS["restrictions"].get("homework"):
-                missing_hw = df[hw_col].astype(str).str.strip().replace("", "0").isin(["", "0"]).sum()
-
-            manual_additions = 0
-            if card_id_col in df.columns:
-                # Manually added students are identified by card IDs starting with "Unknown"
-                manual_additions = df[card_id_col].astype(str).str.strip().str.startswith("Unknown ").sum()
-
-            cancellations = 0
-            notes_col = self.column_map.get("notes", "notes")
-            if notes_col in df.columns:
-                cancellations = df[notes_col].astype(str).str.contains("Canceled", case=False, na=False).sum()
-
-            summary = {
-                "total": total,
-                "attended": attended,
-                "attendance_rate": attendance_rate,
-                "manual_additions": manual_additions,
-                "missing_exam": missing_exam,
-                "missing_hw": missing_hw,
-                "cancellations": cancellations,
-            }
+            summary = compute_session_summary(df, self.column_map, SETTINGS["restrictions"])
 
             self.show_session_summary(session_name=session_name, summary=summary, session_path=path_entry, read_only=False)
             self.set_status(f"Showing summary for '{session_name}'.")
@@ -698,15 +658,9 @@ class App(CTk):
             ).pack(fill="x", expand=True, padx=10, pady=5)
         self._past_sessions_list_dirty = False
 
-    def _load_last_data(self):
+    def _reset_loaded_data_state(self):
         self.data_df = None
         self.current_data_path = None
-        if os.path.exists(LAST_DATA_FILE):
-            try:
-                os.remove(LAST_DATA_FILE)
-            except OSError as e:
-                print(f"Could not clear last data file: {e}")
-
         if hasattr(self, "start_card_subtitle"):
             self._update_ui_for_data_state()
         self.set_status("Ready.")
@@ -900,9 +854,6 @@ class App(CTk):
         self._invalidate_session_files_cache()
         self._refresh_recent_sessions()
         self._populate_past_sessions_list()
-        if self.past_sessions_window is not None and self.past_sessions_window.winfo_exists():
-            self.past_sessions_window.refresh()
-            
         ScanWindow(self, sm)
         
         if created:

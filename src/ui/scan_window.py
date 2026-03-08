@@ -6,7 +6,6 @@ to provide a guided, conversational user experience. All changes for this redesi
 encapsulated within this file, primarily in the `scan_focus_` prefixed methods.
 """
 import os
-import re
 from datetime import datetime
 from tkinter import messagebox, ttk
 
@@ -15,13 +14,31 @@ import pandas as pd
 from customtkinter import CTkButton, CTkEntry, CTkFrame, CTkLabel, CTkProgressBar, CTkTextbox, CTkToplevel
 from PIL import Image
 
+from core.focus_view_state import build_focus_view_state
+from core.grade_logic import grade_missing_or_zero
+from core.scan_filters import FILTER_DEFAULTS, apply_task_filter_change, clear_filter_values, is_filter_active
+from core.scan_workflow import (
+    append_notes,
+    build_focus_action_payload,
+    build_manual_add_default_notes,
+    describe_tasks,
+    format_column_timestamp,
+    format_note_tag,
+)
+from core.session_mutations import build_manual_add_record, build_record_payload, prepare_attendance_update
+from core.scan_view_logic import build_scan_context, collect_missing_tasks, determine_scan_status, row_matches_filters
+from ui.components.scan_filter_panel import ScanFilterPanel
+from ui.components.scan_stats_strip import ScanStatsStrip
 from ui.dialogs.add_student_dialog import AddStudentDialog
 from ui.dialogs.confirmation_dialog import ConfirmationDialog
 from utils.helpers import (
     ASSETS_DIR,
     HOME_BG_FILE,
     MIN_SCAN_SIZE,
+    SESSION_LAST_ACTION_COL,
+    SESSION_MANUAL_ADDED_COL,
     bring_window_to_front,
+    compute_session_summary,
     ensure_initial_size,
     read_data,
     set_dark_title_bar,
@@ -67,35 +84,6 @@ def get_font_for_text(text):
         return "Noto Sans Arabic"
     return "Roboto"
 
-def _normalize_grade_text(value):
-    """Return a trimmed string representation for grade values."""
-    if value is None:
-        return ""
-    return str(value).strip()
-
-def _grade_is_zero(value):
-    """Return True if the grade text represents a zero score."""
-    text = _normalize_grade_text(value)
-    if not text:
-        return False
-    numerator = text.split("/", 1)[0].strip() if "/" in text else text
-    match = re.search(r"-?\d+(?:\.\d+)?", numerator)
-    if not match:
-        match = re.search(r"-?\d+(?:\.\d+)?", text)
-        if not match:
-            return False
-    try:
-        return float(match.group()) == 0.0
-    except ValueError:
-        return False
-
-def _grade_missing_or_zero(value):
-    """Return True when the grade is blank or equals zero."""
-    text = _normalize_grade_text(value)
-    if not text:
-        return True
-    return _grade_is_zero(text)
-
 # --- Constants for the new Focus View Design ---
 # Label used when a student is added from a different group
 DIFF_GROUP_NOTE = "(From diff Group)"
@@ -110,44 +98,11 @@ DARK_WARNING = "#f9d694"
 DARK_ERROR = "#f2b8b5"
 DARK_INFO = "#a9c8e7"
 
-# -- Status Definitions --
-STATUS_STYLES = {
-    "ok": {
-        "text": "All Clear",
-        "icon": "check_circle.png",
-        "color": DARK_SUCCESS,
-    },
-    "already_attended": { # New status for duplicate attendance
-        "text": "Already Attended",
-        "icon": "gpp_good.png", # Using a verified-style icon
-        "color": DARK_INFO,
-    },
-    "missing_exam": {
-        "text": "Tasks Missing",
-        "icon": "warning.png",
-        "color": DARK_WARNING,
-    },
-    "missing_homework": {
-        "text": "Tasks Missing",
-        "icon": "warning.png",
-        "color": DARK_WARNING,
-    },
-    "not_found": {
-        "text": "New Student",
-        "icon": "person_add.png",
-        "color": DARK_INFO,
-    },
-    "duplicate": {
-        "text": "Duplicate Card",
-        "icon": "error.png",
-        "color": DARK_ERROR,
-    },
-}
-
 AUTO_ATTEND_SUCCESS_TAG = "auto_attend_success"
 AUTO_ATTEND_FLASH_BG = "#244b31"
 AUTO_ATTEND_FLASH_FG = "#ffffff"
 AUTO_ATTEND_FLASH_DURATION_MS = 900
+SESSION_SAVE_DEBOUNCE_MS = 800
 
 class ScanWindow(CTkToplevel):
     def _reset_treeview_sort(self):
@@ -183,13 +138,13 @@ class ScanWindow(CTkToplevel):
         # --- Filter State ---
         self._filter_panel = None
         self._filter_vars = {
-            "attendance": ctk.StringVar(value="all"),
-            "missing_exam": ctk.BooleanVar(value=False),
-            "missing_hw": ctk.BooleanVar(value=False),
-            "has_exam": ctk.BooleanVar(value=False),
-            "has_hw": ctk.BooleanVar(value=False),
-            "has_notes": ctk.BooleanVar(value=False),
-            "manual_added": ctk.BooleanVar(value=False),
+            "attendance": ctk.StringVar(value=FILTER_DEFAULTS["attendance"]),
+            "missing_exam": ctk.BooleanVar(value=FILTER_DEFAULTS["missing_exam"]),
+            "missing_hw": ctk.BooleanVar(value=FILTER_DEFAULTS["missing_hw"]),
+            "has_exam": ctk.BooleanVar(value=FILTER_DEFAULTS["has_exam"]),
+            "has_hw": ctk.BooleanVar(value=FILTER_DEFAULTS["has_hw"]),
+            "has_notes": ctk.BooleanVar(value=FILTER_DEFAULTS["has_notes"]),
+            "manual_added": ctk.BooleanVar(value=FILTER_DEFAULTS["manual_added"]),
         }
         self._filter_active = False
 
@@ -201,8 +156,6 @@ class ScanWindow(CTkToplevel):
         self._all_iids = []
         self._search_entries = []
         self.search_var = None
-        self._manual_additions = 0
-        self._cancellations = 0
         self._focus_reset_job = None
         self._focus_guard_depth = 0
         self.scan_focus_ctx = None
@@ -211,14 +164,8 @@ class ScanWindow(CTkToplevel):
         self.focus_view_container = None # For integrated view
         self._row_flash_jobs = {}
         self._notes_placeholder_active = False
-        self._stats_progress_bar = None
-        self.stats_vars = {
-            "total": ctk.StringVar(value="0"),
-            "attended": ctk.StringVar(value="0"),
-            "percent": ctk.StringVar(value="0%"),
-            "missing_exam": ctk.StringVar(value="0"),
-            "missing_hw": ctk.StringVar(value="0"),
-        }
+        self._pending_session_save_job = None
+        self.stats_strip = None
 
         self._build_ui()
         self._apply_treeview_style()
@@ -243,7 +190,16 @@ class ScanWindow(CTkToplevel):
             self._filter_panel.lift()
             return
         panel_width = 320
-        panel = CTkFrame(self, fg_color="#232a36", corner_radius=12, width=panel_width)
+        panel = ScanFilterPanel(
+            self,
+            filter_vars=self._filter_vars,
+            load_icon=self._load_icon,
+            on_hide=self._hide_filter_panel,
+            on_filter_change=self._on_filter_change,
+            on_task_filter_change=self._on_task_filter_change,
+            on_clear_filters=self._clear_filters,
+            panel_width=panel_width,
+        )
         self._filter_panel = panel
         self.update_idletasks()
         # Center panel horizontally above filter icon
@@ -253,62 +209,6 @@ class ScanWindow(CTkToplevel):
         x = bx - self.winfo_rootx() + (icon_width // 2) - (panel_width // 2)
         y = by - self.winfo_rooty()
         panel.place(x=x, y=y)
-
-        # Top bar with X button
-        top_bar = CTkFrame(panel, fg_color="transparent")
-        top_bar.pack(fill="x", padx=0, pady=(0,0))
-        CTkLabel(top_bar, text="Filters", font=("Roboto", 14, "bold"), anchor="w").pack(side="left", padx=(12,0), pady=(10,0))
-        x_icon = self._load_icon("close.png", size=(20, 20))
-        dismiss_btn = CTkButton(top_bar, text="", image=x_icon, width=32, height=32, fg_color="transparent", command=self._hide_filter_panel)
-        dismiss_btn.pack(side="right", padx=(0,8), pady=(10,0))
-
-        # Attendance Status (Radio)
-        CTkLabel(panel, text="Attendance Status", font=("Arial", 12, "bold"), anchor="w").pack(anchor="w", padx=12, pady=(10,0))
-        att_frame = CTkFrame(panel, fg_color="transparent")
-        att_frame.pack(anchor="w", padx=12, pady=(0,4))
-        for val, label in [("all", "All Students"), ("attend", "Attended"), ("absent", "Absent")]:
-            ctk.CTkRadioButton(att_frame, text=label, variable=self._filter_vars["attendance"], value=val, command=self._on_filter_change).pack(side="left", padx=(0,12))
-
-        # Task Status (Checkboxes)
-        CTkLabel(panel, text="Task Status", font=("Roboto", 12, "bold"), anchor="w").pack(anchor="w", padx=12, pady=(6,0))
-        task_frame = CTkFrame(panel, fg_color="transparent")
-        task_frame.pack(fill="x", padx=12, pady=(0,4))
-        task_frame.grid_columnconfigure((0, 1), weight=1)
-
-        # Exam column
-        exam_col_frame = CTkFrame(task_frame, fg_color="transparent")
-        exam_col_frame.grid(row=0, column=0, sticky="nsew")
-        ctk.CTkCheckBox(
-            exam_col_frame, text="Missing Exam", variable=self._filter_vars["missing_exam"],
-            command=lambda: self._on_task_filter_change("exam", "missing")
-        ).pack(anchor="w", pady=(0, 4))
-        ctk.CTkCheckBox(
-            exam_col_frame, text="Complete Exam", variable=self._filter_vars["has_exam"],
-            command=lambda: self._on_task_filter_change("exam", "has")
-        ).pack(anchor="w")
-
-        # Homework column
-        hw_col_frame = CTkFrame(task_frame, fg_color="transparent")
-        hw_col_frame.grid(row=0, column=1, sticky="nsew")
-        ctk.CTkCheckBox(
-            hw_col_frame, text="Missing H.W.", variable=self._filter_vars["missing_hw"],
-            command=lambda: self._on_task_filter_change("hw", "missing")
-        ).pack(anchor="w", pady=(0, 4))
-        ctk.CTkCheckBox(
-            hw_col_frame, text="Complete H.W", variable=self._filter_vars["has_hw"],
-            command=lambda: self._on_task_filter_change("hw", "has")
-        ).pack(anchor="w")
-
-        # Other Criteria (Checkboxes)
-        CTkLabel(panel, text="Other Criteria", font=("Roboto", 12, "bold"), anchor="w").pack(anchor="w", padx=12, pady=(0,4))
-        other_frame = CTkFrame(panel, fg_color="transparent")
-        other_frame.pack(anchor="w", padx=12, pady=(0,4))
-        ctk.CTkCheckBox(other_frame, text="Has Notes", variable=self._filter_vars["has_notes"], command=self._on_filter_change).pack(side="left", padx=(0,12))
-        ctk.CTkCheckBox(other_frame, text="Manually Added (No Card ID)", variable=self._filter_vars["manual_added"], command=self._on_filter_change).pack(side="left", padx=(0,12))
-
-        # Clear Filters Button
-        clear_btn = CTkButton(panel, text="Clear Filters", fg_color="#232a36", command=self._clear_filters)
-        clear_btn.pack(fill="x", padx=12, pady=(10,10))
 
         self._filter_panel.lift()
 
@@ -325,41 +225,32 @@ class ScanWindow(CTkToplevel):
         self._update_filter_icon()
         self._filter_all()
 
+    def _get_filter_values(self):
+        values = {}
+        for key, var in self._filter_vars.items():
+            values[key] = var.get()
+        return values
+
+    def _set_filter_values(self, values):
+        for key, value in values.items():
+            if key in self._filter_vars:
+                self._filter_vars[key].set(value)
+
     def _on_task_filter_change(self, task_type, state):
         """Handles mutually exclusive checkbox logic for tasks."""
-        if task_type == "exam":
-            if state == "missing" and self._filter_vars["missing_exam"].get():
-                self._filter_vars["has_exam"].set(False)
-            elif state == "has" and self._filter_vars["has_exam"].get():
-                self._filter_vars["missing_exam"].set(False)
-        elif task_type == "hw":
-            if state == "missing" and self._filter_vars["missing_hw"].get():
-                self._filter_vars["has_hw"].set(False)
-            elif state == "has" and self._filter_vars["has_hw"].get():
-                self._filter_vars["missing_hw"].set(False)
-
-        # Trigger the main filter update
-        self._filter_all()
+        updated = apply_task_filter_change(self._get_filter_values(), task_type, state)
+        self._set_filter_values(updated)
+        self._on_filter_change()
 
     def _clear_filters(self):
-        for v in self._filter_vars.values():
-            if isinstance(v, ctk.StringVar): v.set("all")
-            else: v.set(False)
+        self._set_filter_values(clear_filter_values(self._get_filter_values()))
         self._filter_active = False
         self._update_filter_icon()
         self._filter_all()
         self._hide_filter_panel()
 
     def _is_filter_active(self):
-        # Returns True if any filter is not default
-        if self._filter_vars["attendance"].get() != "all": return True
-        if self._filter_vars["missing_exam"].get(): return True
-        if self._filter_vars["missing_hw"].get(): return True
-        if self._filter_vars["has_exam"].get(): return True
-        if self._filter_vars["has_hw"].get(): return True
-        if self._filter_vars["has_notes"].get(): return True
-        if self._filter_vars["manual_added"].get(): return True
-        return False
+        return is_filter_active(self._get_filter_values())
 
     def _update_filter_icon(self):
         # Change icon to filled if filter active
@@ -475,35 +366,26 @@ class ScanWindow(CTkToplevel):
         ctx["status"] = status
 
         # Populate UI elements
-        self.focus_view.name_label.configure(text=ctx.get("name") or "Unknown Student")
         student_name = ctx.get("name") or "Unknown Student"
-        self.focus_view.name_label.configure(font=(get_font_for_text(student_name), 32, "bold"))
         formatted_name = _format_arabic_text(student_name)
-        self.focus_view.name_label.configure(text=formatted_name)
         card_display_val = ctx.get('card_display', '') or ''
         card_display = str(card_display_val).replace('null', '').strip() or '--'
         student_id_val = ctx.get('student_id', '') or ''
         student_id = str(student_id_val).replace('null', '').strip() or '--'
-        id_text = f"Student ID: {student_id}  •  Card ID: {card_display}"
-        self.focus_view.id_label.configure(text=id_text)
+        self.focus_view.set_student_identity(
+            formatted_name,
+            get_font_for_text(student_name),
+            student_id,
+            card_display,
+        )
 
         # Set notes
-        if not self.read_only: self.focus_view.notes.configure(state="normal")
-        self.focus_view.notes.delete("1.0", "end")
         existing_notes = ctx.get("existing_notes", "")
-        if existing_notes: # Display existing notes
-            formatted_notes = _format_arabic_text(existing_notes)
-            self.focus_view.notes.insert("1.0", formatted_notes)
-            self.focus_view.notes.configure(text_color=DARK_PRIMARY_TEXT)
-            if any('\u0600' <= char <= '\u06FF' for char in str(existing_notes)):
-                self.focus_view.notes._textbox.tag_add("rtl", "1.0", "end")
-            self._notes_placeholder_active = False
-        else:
-            self.focus_view.notes._textbox.tag_remove("rtl", "1.0", "end")
-            self.focus_view.notes.configure(text_color="gray")
-            self.focus_view.notes.insert("1.0", "Add notes here...")
-            self._notes_placeholder_active = True
-        if self.read_only: self.focus_view.notes.configure(state="disabled")
+        self._notes_placeholder_active = self.focus_view.set_notes_content(
+            existing_notes,
+            formatted_notes=_format_arabic_text(existing_notes) if existing_notes else "",
+            is_rtl=any('\u0600' <= char <= '\u06FF' for char in str(existing_notes)),
+        )
 
         # Filter the main table view
         focus_iids = ctx.get("focus_iids") or []
@@ -517,81 +399,7 @@ class ScanWindow(CTkToplevel):
             self.scan_restore_from_focus()
 
         # Set status and update dynamic UI parts
-        self.scan_focus_set_status(status, ctx)
-
-    def scan_focus_set_status(self, kind, context):
-        """Updates the entire Focus View UI based on the student's status."""
-        if self.scan_focus_ctx: self.scan_focus_ctx["status"] = kind
-
-        # 1. Update Status Icon
-        style = STATUS_STYLES.get(kind, STATUS_STYLES["ok"])
-        self.focus_view.status_icon.configure(image=self._load_icon(style["icon"], size=(48, 48)))
-
-        # 2. Update Details Cards (Homework & Exam)
-        missing_tasks = context.get("missing_tasks", [])
-        success_icon = self._load_icon("task_alt.png")
-        problem_icon = self._load_icon("error.png")
-
-        # Subtle container colors
-        success_color = "#1b331d" # Material Green Dark
-        problem_color = "#3c1b1a" # Material Red Dark
-
-        # Homework
-        hw_missing = "homework" in missing_tasks
-        self.focus_view.hw_icon_label.configure(image=problem_icon if hw_missing else success_icon)
-        hw_grade = context.get("homework", "")
-        hw_text = ""
-        if hw_grade:
-            hw_text = str(hw_grade)
-            if _grade_is_zero(hw_grade):
-                hw_text += " (Fail)"
-        else:
-            hw_text = "Not Submitted"
-        self.focus_view.hw_grade_label.configure(text=hw_text)
-        self.focus_view.hw_card.configure(fg_color=problem_color if hw_missing else success_color)
-
-        # Exam
-        exam_missing = "exam" in missing_tasks
-        self.focus_view.exam_icon_label.configure(image=problem_icon if exam_missing else success_icon)
-        exam_grade = context.get("exam", "")
-        exam_text = ""
-        if exam_grade:
-            exam_text = str(exam_grade)
-            if _grade_is_zero(exam_grade):
-                exam_text += " (Fail)"
-        else:
-            exam_text = "Not Submitted"
-        self.focus_view.exam_grade_label.configure(text=exam_text)
-        self.focus_view.exam_card.configure(fg_color=problem_color if exam_missing else success_color)
-
-        # 3. Update Action Buttons
-        self._update_action_buttons(kind, context)
-
-    def _update_action_buttons(self, kind, context):
-        """Shows and hides the correct action buttons using a stable grid layout."""
-        # Hide all buttons first
-        for btn in self.focus_view.buttons:
-            btn.grid_remove()
-
-        # Determine which buttons to show and place them in the grid
-        if kind == "not_found":
-            # CHANGED: Place the single button in the center column (1)
-            # This leaves columns 0 and 2 as empty spacers, maintaining width.
-            self.focus_view.btn_add_student.grid(row=0, column=1, sticky="ew", padx=2)
-
-        elif kind in {"missing_exam", "missing_homework"}:
-            # UNCHANGED: This layout already uses all three columns correctly.
-            self.focus_view.btn_deny.grid(row=0, column=0, sticky="ew", padx=2)
-            self.focus_view.btn_override.grid(row=0, column=1, sticky="ew", padx=2)
-            self.focus_view.btn_complete.grid(row=0, column=2, sticky="ew", padx=2)
-
-        elif context.get("already_attended"):
-            # CHANGED: Place the single button in the center column (1)
-            self.focus_view.btn_cancel.grid(row=0, column=1, sticky="ew", padx=2)
-
-        elif kind == "ok":
-            # No buttons are needed, the grid remains empty but holds its space
-            pass
+        self.focus_view.render_status(build_focus_view_state(status, ctx))
 
     def scan_focus_clear(self):
         """Hides the Focus View and resets its state."""
@@ -599,10 +407,7 @@ class ScanWindow(CTkToplevel):
         self.scan_focus_ctx = None
         
         if hasattr(self, "focus_view"):
-            if not self.read_only: self.focus_view.notes.configure(state="normal")
-            self.focus_view.notes.delete("1.0", "end")
-            self.focus_view.notes.configure(text_color="gray")
-            self.focus_view.notes.insert("1.0", "Add notes here...")
+            self.focus_view.reset_view()
             self._notes_placeholder_active = True
 
         self.scan_restore_from_focus()
@@ -704,7 +509,13 @@ class ScanWindow(CTkToplevel):
         self.end_button.pack(side="right", padx=(0, 0))
 
         # --- Stats strip ---
-        self._build_stats_strip()
+        self.stats_strip = ScanStatsStrip(
+            self,
+            load_icon=self._load_icon,
+            show_exam=bool(self.restrictions.get("exam") and self.mapping.get("exam", "") in self.df.columns),
+            show_homework=bool(self.restrictions.get("homework") and self.mapping.get("homework", "") in self.df.columns),
+        )
+        self.stats_strip.pack(fill="x", padx=24, pady=(0, 8))
 
         # --- Main content area with integrated Focus View ---
         main_body = CTkFrame(self, fg_color="transparent")
@@ -933,28 +744,13 @@ class ScanWindow(CTkToplevel):
         except Exception: return ""
 
     def scan_collect_missing_tasks(self, iid):
-        missing = []
-        exam_grade = self.scan_tree_get(iid, "exam")
-        if self.restrictions.get("exam") and "exam" in self.tree["columns"] and _grade_missing_or_zero(exam_grade):
-            missing.append("exam")
-        
-        hw_grade = self.scan_tree_get(iid, "homework")
-        if self.restrictions.get("homework") and "homework" in self.tree["columns"] and _grade_missing_or_zero(hw_grade):
-            missing.append("homework")
-        return missing
+        return collect_missing_tasks(self._get_row_values(iid), self.restrictions)
 
     def scan_describe_tasks(self, tasks):
-        if not tasks: return ""
-        labels = {"exam": "Exam", "homework": "Homework"}
-        mapped = [labels.get(task, str(task).title()) for task in tasks]
-        if not mapped: return ""
-        return mapped[0] if len(mapped) == 1 else " & ".join(mapped)
+        return describe_tasks(tasks)
 
     def scan_append_notes(self, original, addition):
-        original_clean, addition_clean = self._clean_value(original), self._clean_value(addition)
-        if not addition_clean: return original_clean
-        if not original_clean: return addition_clean
-        return f"{original_clean.rstrip()}\n{addition_clean}"
+        return append_notes(original, addition)
 
     def scan_collect_new_note(self, context=None):
         if not hasattr(self, "focus_view") or self.focus_view is None:
@@ -988,10 +784,10 @@ class ScanWindow(CTkToplevel):
         return datetime.now()
 
     def _format_column_timestamp(self, dt):
-        return dt.strftime("%I:%M:%S %p")
+        return format_column_timestamp(dt)
 
     def _format_note_tag(self, dt):
-        return f"[{dt.strftime('%I:%M:%S %p')}]"
+        return format_note_tag(dt)
 
     def scan_now_timestamps(self):
         current_dt = self._current_datetime()
@@ -1002,30 +798,15 @@ class ScanWindow(CTkToplevel):
         return note_tag
 
     def scan_determine_status(self, scan_ctx):
-        if scan_ctx.get("status") in {"not_found", "duplicate"}: return scan_ctx["status"]
-        if not scan_ctx.get("found", True): return "not_found"
-        if scan_ctx.get("already_attended"): return "already_attended"
-        missing = scan_ctx.get("missing_tasks", [])
-        if missing: return "missing_exam" if "exam" in missing else "missing_homework"
-        return "ok"
+        return determine_scan_status(scan_ctx)
+
+    def _get_row_values(self, iid):
+        return {column: self.scan_tree_get(iid, column) for column in self.tree["columns"]}
 
     def scan_build_context_for_iid(self, iid, *, source="manual"):
-        context = {
-            "iid": iid, "card_id": self.scan_normalize_card(iid),
-            "card_display": self.scan_tree_get(iid, "card_id") or self.scan_normalize_card(iid),
-            "name": self.scan_tree_get(iid, "name"), "student_id": self.scan_tree_get(iid, "student_id"),
-            "attendance": self.scan_tree_get(iid, "attendance").lower(),
-            "existing_notes": self.scan_tree_get(iid, "notes"), "timestamp": self.scan_tree_get(iid, "timestamp"),
-            "source": source, "focus_iids": [iid], "found": True,
-            "homework": self.scan_tree_get(iid, "homework"),
-            "exam": self.scan_tree_get(iid, "exam"),
-        }
-        context["missing_tasks"] = self.scan_collect_missing_tasks(iid)
-        context["already_attended"] = context["attendance"] == "attend"
-        context["allow_cancel"] = context["already_attended"]
-        context["status"] = self.scan_determine_status(context)
-        context["display_name"] = context["name"] or context["student_id"] or context["card_display"] or "Student"
-        return context
+        row = self._get_row_values(iid)
+        row["_restrictions"] = self.restrictions
+        return build_scan_context(iid, row, source=source, normalized_iid=self.scan_normalize_card(iid))
 
     def scan_build_not_found_context(self, card_id):
         return {
@@ -1144,10 +925,13 @@ class ScanWindow(CTkToplevel):
         # Build the record payload to be saved to the session file
         rec = self._build_record_payload(iid, current_attendance, new_notes, current_timestamp)
         try:
-            self.sm.add_record(rec)
+            changed = self.sm.add_record(rec)
         except Exception as exc:
             messagebox.showwarning("Update Failed", f"Could not save notes: {exc}", parent=self)
             return
+
+        if changed:
+            self._schedule_session_save()
 
         # Update the Treeview UI
         self.tree.set(iid, "notes", self._clean_value(new_notes))
@@ -1167,7 +951,7 @@ class ScanWindow(CTkToplevel):
             return
         column_timestamp, _ = self.scan_now_timestamps()
         final_note = self._clean_value(context.get("existing_notes", ""))
-        success = self.scan_commit_attendance(context["iid"], "attend", final_note, timestamp=column_timestamp)
+        success = self.scan_commit_attendance(context["iid"], "attend", final_note, timestamp=column_timestamp, action="attend")
         if success:
             self._handle_auto_attend_success(context)
 
@@ -1232,126 +1016,74 @@ class ScanWindow(CTkToplevel):
         message_name = self._clean_value(display_name) or "Student"
         self.parent.set_status(f"{message_name} marked as attended.")
 
-    def scan_commit_attendance(self, iid, attendance, notes, *, timestamp=None, warn_on_duplicate=False):
-        try: return bool(self._set_attendance(iid, attendance, notes, warn_on_duplicate=warn_on_duplicate, timestamp_override=timestamp))
+    def _schedule_session_save(self):
+        if self.read_only or not self.sm.has_pending_changes():
+            return
+        if self._pending_session_save_job is not None:
+            try:
+                self.after_cancel(self._pending_session_save_job)
+            except Exception:
+                pass
+        self._pending_session_save_job = self.after(
+            SESSION_SAVE_DEBOUNCE_MS,
+            lambda: self._flush_session_save(show_error=True),
+        )
+
+    def _flush_session_save(self, *, show_error):
+        if self._pending_session_save_job is not None:
+            try:
+                self.after_cancel(self._pending_session_save_job)
+            except Exception:
+                pass
+            self._pending_session_save_job = None
+        if self.read_only or not self.sm.has_pending_changes():
+            return True
+        try:
+            self.sm.save()
+        except Exception as exc:
+            if show_error:
+                messagebox.showwarning("Save Failed", f"Could not save session changes: {exc}", parent=self)
+            return False
+        return True
+
+    def scan_commit_attendance(self, iid, attendance, notes, *, timestamp=None, warn_on_duplicate=False, action=None):
+        try: return bool(self._set_attendance(iid, attendance, notes, warn_on_duplicate=warn_on_duplicate, timestamp_override=timestamp, action=action))
         except Exception as exc: messagebox.showwarning("Attendance Update Failed", str(exc), parent=self); return False # type: ignore
 
-    def scan_focus_on_completed(self):
+    def _commit_focus_action(self, action_name):
         context = self.scan_focus_ctx or {}
         if not context.get("iid"):
             return
-        column_timestamp, tag = self.scan_now_timestamps()
-        desc = self.scan_describe_tasks(context.get("missing_tasks", [])) or "task"
-        action_note = f"{tag} Completed {desc} at center."
-        base = self.scan_append_notes(context.get("existing_notes", ""), action_note)
-        typed = self.scan_collect_new_note(context)
-        final_note = self.scan_append_notes(base, typed)
-        if self.scan_commit_attendance(context["iid"], "attend", final_note, timestamp=column_timestamp):
+        typed_note = self.scan_collect_new_note(context)
+        payload = build_focus_action_payload(action_name, context, typed_note, self._current_datetime())
+        if self.scan_commit_attendance(
+            context["iid"],
+            payload["attendance"],
+            payload["final_note"],
+            timestamp=payload["column_timestamp"],
+            action=payload["record_action"],
+        ):
             self.scan_focus_clear()
+
+    def scan_focus_on_completed(self):
+        self._commit_focus_action("completed")
 
     def scan_focus_on_override(self):
-        context = self.scan_focus_ctx or {}
-        if not context.get("iid"):
-            return
-        column_timestamp, tag = self.scan_now_timestamps()
-        desc = self.scan_describe_tasks(context.get("missing_tasks", [])) or "task"
-        action_note = f"{tag} Attended (Didn't do {desc})."
-        base = self.scan_append_notes(context.get("existing_notes", ""), action_note)
-        typed = self.scan_collect_new_note(context)
-        final_note = self.scan_append_notes(base, typed)
-        if self.scan_commit_attendance(context["iid"], "attend", final_note, timestamp=column_timestamp):
-            self.scan_focus_clear()
+        self._commit_focus_action("override")
 
     def scan_focus_on_deny(self):
-        context = self.scan_focus_ctx or {}
-        if not context.get("iid"):
-            return
-        column_timestamp, tag = self.scan_now_timestamps()
-        desc = self.scan_describe_tasks(context.get("missing_tasks", [])) or "requirements"
-        action_note = f"{tag} Denied Entry: No {desc}."
-        base = self.scan_append_notes(context.get("existing_notes", ""), action_note)
-        typed = self.scan_collect_new_note(context)
-        final_note = self.scan_append_notes(base, typed)
-        if self.scan_commit_attendance(context["iid"], "", final_note, timestamp=column_timestamp):
-            self.scan_focus_clear()
+        self._commit_focus_action("denied")
 
     def scan_focus_on_add_student(self):
         if self.read_only: return
         context = self.scan_focus_ctx or {}
         card_id = context.get("card_id") or context.get("card_display")
         typed = self.scan_collect_new_note(context)
-        default_notes = typed
-        if not context.get("found", True) or context.get("status") == "not_found":
-            default_notes = f"{DIFF_GROUP_NOTE} {default_notes}".strip() if default_notes else DIFF_GROUP_NOTE
+        default_notes = build_manual_add_default_notes(context, typed, DIFF_GROUP_NOTE)
         self._launch_add_student_dialog(card_id=card_id, default_notes=default_notes or "")
 
     def scan_focus_on_cancel_attendance(self):
-        context = self.scan_focus_ctx or {}
-        if not context.get("iid"):
-            return
-        column_timestamp, tag = self.scan_now_timestamps()
-        action_note = f"{tag} Canceled."
-        base = self.scan_append_notes(context.get("existing_notes", ""), action_note)
-        typed = self.scan_collect_new_note(context)
-        final_note = self.scan_append_notes(base, typed)
-        self._cancellations += 1
-        if self.scan_commit_attendance(context["iid"], "", final_note, timestamp=column_timestamp):
-            self.scan_focus_clear()
-
-    def _build_stats_strip(self):
-        # Compact horizontal stats bar
-        self.stats_frame = CTkFrame(self, fg_color="#12263a", corner_radius=12, height=56)
-        self.stats_frame.pack(fill="x", padx=24, pady=(0, 8))
-
-        card_defs = [
-            {"label": "Total Students", "var": self.stats_vars["total"], "icon": "group.png", "is_progress": False},
-            {"label": "Attended", "var": self.stats_vars["attended"], "icon": "check_circle.png", "is_progress": False},
-            {"label": "Attendance", "var": self.stats_vars["percent"], "icon": "group.png", "is_progress": True},
-        ]
-        _exam_col = self.mapping.get("exam", "")
-        _hw_col = self.mapping.get("homework", "")
-        if self.restrictions.get("exam") and _exam_col and _exam_col in self.df.columns:
-            card_defs.append({"label": "Missing Exam", "var": self.stats_vars["missing_exam"], "icon": "warning.png", "is_progress": False})
-        if self.restrictions.get("homework") and _hw_col and _hw_col in self.df.columns:
-            card_defs.append({"label": "Missing Homework", "var": self.stats_vars["missing_hw"], "icon": "warning.png", "is_progress": False})
-
-        # Place all cards in a single horizontal line, centered
-        for idx, card in enumerate(card_defs):
-            card_frame = CTkFrame(
-                self.stats_frame,
-                fg_color="#232a36",
-                corner_radius=10,
-                width=110,
-                height=56
-            )
-            card_frame.grid(row=0, column=idx, sticky="nsew", padx=(0 if idx == 0 else 10, 0), pady=4)
-            self.stats_frame.grid_columnconfigure(idx, weight=1)
-
-            # Center everything in the card
-            card_inner = CTkFrame(card_frame, fg_color="transparent")
-            card_inner.pack(expand=True, fill="both")
-
-            CTkLabel(card_inner, text=card["label"], font=("Roboto", 12, "bold"), text_color="#cac4d0", anchor="center", justify="center").pack(side="top", anchor="center", pady=(6, 0))
-
-            icon_num_frame = CTkFrame(card_inner, fg_color="transparent")
-            icon_num_frame.pack(side="top", anchor="center", pady=(0, 0), expand=True)
-            icon_img = self._load_icon(card["icon"], size=(22, 22))
-            icon_label = CTkLabel(icon_num_frame, image=icon_img, text="", width=24)
-            icon_label.pack(side="left", anchor="center", padx=(0, 4))
-
-            if card["is_progress"]:
-                percent_str = self.stats_vars["percent"].get().replace("%", "")
-                try:
-                    percent_val = float(percent_str) / 100.0
-                except Exception:
-                    percent_val = 0.0
-                progress = CTkProgressBar(icon_num_frame, width=40, height=6)
-                progress.set(percent_val)
-                self._stats_progress_bar = progress
-                progress.pack(side="left", anchor="center", padx=(0, 4))
-                CTkLabel(icon_num_frame, textvariable=self.stats_vars["percent"], font=("Roboto", 18, "bold"), text_color="#a9c8e7", anchor="center", justify="center").pack(side="left", anchor="center", padx=(0, 0))
-            else:
-                CTkLabel(icon_num_frame, textvariable=card["var"], font=("Roboto", 20, "bold"), text_color="#e3e2e6", anchor="center", justify="center").pack(side="left", anchor="center", padx=(0, 0))
+        self._commit_focus_action("canceled")
 
     def _apply_treeview_style(self):
         style = ttk.Style(self)
@@ -1402,33 +1134,22 @@ class ScanWindow(CTkToplevel):
         total = len(self._all_iids)
         attended = sum(1 for iid in self._all_iids if self.tree.exists(iid) and self.scan_tree_get(iid, "attendance").lower() == "attend")
         metrics = {"total": total, "attended": attended, "attendance_rate": f"{(attended / total) * 100:.1f}%" if total else "0%"}
-        if self.restrictions.get("exam") and "exam" in self.tree["columns"]: metrics["missing_exam"] = sum(1 for iid in self._all_iids if self.tree.exists(iid) and _grade_missing_or_zero(self.scan_tree_get(iid, "exam")))
+        if self.restrictions.get("exam") and "exam" in self.tree["columns"]: metrics["missing_exam"] = sum(1 for iid in self._all_iids if self.tree.exists(iid) and grade_missing_or_zero(self.scan_tree_get(iid, "exam")))
         if self.restrictions.get("homework") and "homework" in self.tree["columns"]:
             missing_hw_count = 0
             for iid in self._all_iids:
-                if self.tree.exists(iid) and _grade_missing_or_zero(self.scan_tree_get(iid, "homework")):
+                if self.tree.exists(iid) and grade_missing_or_zero(self.scan_tree_get(iid, "homework")):
                     missing_hw_count += 1
             metrics["missing_hw"] = missing_hw_count
         return metrics
 
     def _build_summary_payload(self):
-        summary = self._compute_summary_metrics()
-        summary.update({"manual_additions": self._manual_additions, "cancellations": self._cancellations})
-        return summary
+        return compute_session_summary(self.sm.get_dataframe(copy=True), self.mapping, self.restrictions)
 
     def _refresh_stats(self):
         metrics = self._compute_summary_metrics()
-        self.stats_vars["total"].set(f"{metrics['total']}")
-        self.stats_vars["attended"].set(f"{metrics['attended']}")
-        self.stats_vars["percent"].set(metrics["attendance_rate"])
-        if self._stats_progress_bar is not None:
-            try:
-                pct = float(metrics["attendance_rate"].replace("%", "")) / 100.0
-            except Exception:
-                pct = 0.0
-            self._stats_progress_bar.set(pct)
-        if "missing_exam" in metrics: self.stats_vars["missing_exam"].set(f"{metrics['missing_exam']}")
-        if "missing_hw" in metrics: self.stats_vars["missing_hw"].set(f"{metrics['missing_hw']}")
+        if self.stats_strip is not None:
+            self.stats_strip.update_metrics(metrics)
 
     def _safe_destroy(self, widget):
         """Safely destroys a widget if it exists."""
@@ -1440,13 +1161,14 @@ class ScanWindow(CTkToplevel):
 
     def _finalize_and_close(self, status_message=None):
         if status_message is None: status_message = f"Session '{self.sm.name}' saved and closed."
+        if not self._flush_session_save(show_error=True):
+            return
         summary, session_name, session_path, parent, read_only = self._build_summary_payload(), self.sm.name, getattr(self.sm, "session_path", None), self.parent, getattr(self, "read_only", False)
         
         # Safely destroy the main scan window
         self._safe_destroy(self)
         
         if hasattr(parent, "_refresh_recent_sessions"): parent._refresh_recent_sessions()
-        if getattr(parent, "past_sessions_window", None) and parent.past_sessions_window.winfo_exists(): parent.past_sessions_window.refresh()
         if hasattr(parent, "set_status"): parent.set_status(status_message)
         if hasattr(parent, "show_session_summary"):
             parent.after(160, lambda: parent.show_session_summary(session_name=session_name, summary=summary, session_path=session_path, read_only=read_only))
@@ -1456,77 +1178,55 @@ class ScanWindow(CTkToplevel):
     def _filter_all(self):
         query = self._clean_value(self.search_var.get()).lower() if self.search_var else ""
         terms = [term for term in query.split() if term]
-        att = self._filter_vars["attendance"].get()
-        missing_exam = self._filter_vars["missing_exam"].get()
-        missing_hw = self._filter_vars["missing_hw"].get()
-        has_exam = self._filter_vars["has_exam"].get()
-        has_hw = self._filter_vars["has_hw"].get()
-        has_notes = self._filter_vars["has_notes"].get()
-        manual_added = self._filter_vars["manual_added"].get()
+        filters = {
+            "attendance": self._filter_vars["attendance"].get(),
+            "missing_exam": self._filter_vars["missing_exam"].get(),
+            "missing_hw": self._filter_vars["missing_hw"].get(),
+            "has_exam": self._filter_vars["has_exam"].get(),
+            "has_hw": self._filter_vars["has_hw"].get(),
+            "has_notes": self._filter_vars["has_notes"].get(),
+            "manual_added": self._filter_vars["manual_added"].get(),
+        }
 
         for iid in self._all_iids:
             if not self.tree.exists(iid): continue
-            show = True
-            # Search filter
-            if terms:
-                values = [self._clean_value(self.tree.set(iid, col)).lower() for col in self.tree['columns']] + [str(iid).lower()]
-                haystack = ' '.join(values)
-                if not all(term in haystack for term in terms):
-                    show = False
-            # Attendance filter
-            if att == "attend" and self.scan_tree_get(iid, "attendance").lower() != "attend":
-                show = False
-            if att == "absent" and self.scan_tree_get(iid, "attendance").lower() == "attend":
-                show = False
-            # Task filters
-            if missing_exam and not self.scan_collect_missing_tasks(iid).count("exam"):
-                show = False
-            if missing_hw and not self.scan_collect_missing_tasks(iid).count("homework"):
-                show = False
-            if has_exam and self.scan_collect_missing_tasks(iid).count("exam"):
-                show = False
-            if has_hw and self.scan_collect_missing_tasks(iid).count("homework"):
-                show = False
-            # Has notes
-            if has_notes and not self.scan_tree_get(iid, "notes"):
-                show = False
-            # Manually added (no card id is not digit)
-            if manual_added and str(iid).isdigit():
-                show = False
+            row = self._get_row_values(iid)
+            show = row_matches_filters(row, iid, terms, filters, self.restrictions)
             if show:
                 self.tree.reattach(iid, '', 'end')
             else:
                 self.tree.detach(iid)
 
-    def _set_attendance(self, code, attendance, notes, *, warn_on_duplicate=True, timestamp_override=None):
+    def _set_attendance(self, code, attendance, notes, *, warn_on_duplicate=True, timestamp_override=None, action=None):
         if self.read_only or not self.tree.exists(code):
             return False
-        target_attendance = self._clean_value(attendance)
-        existing_timestamp = self._clean_value(self.scan_tree_get(code, "timestamp"))
         current_dt = self._current_datetime()
-        is_first_attend = target_attendance.lower() == "attend" and not existing_timestamp
-        override_clean = self._clean_value(timestamp_override) if timestamp_override else ""
-        column_timestamp = existing_timestamp
-        if is_first_attend:
-            column_timestamp = override_clean or self._format_column_timestamp(current_dt)
-        notes_clean = self._clean_value(notes)
-        record_timestamp = self._clean_value(column_timestamp) if column_timestamp else ""
-        rec = self._build_record_payload(code, target_attendance, notes_clean, record_timestamp)
+        row = self._get_row_values(code)
+        rec, column_timestamp, is_first_attend = prepare_attendance_update(
+            row,
+            code,
+            attendance,
+            notes,
+            current_dt,
+            timestamp_override=timestamp_override,
+            action=action,
+        )
         try:
-            self.sm.add_record(rec)
+            changed = self.sm.add_record(rec)
         except Exception as exc:
             messagebox.showwarning("Attendance Update Failed", str(exc), parent=self); return False # type: ignore
+        if changed:
+            self._schedule_session_save()
         if is_first_attend:
-            self._update_row(code, target_attendance, notes_clean, column_timestamp)
+            self._update_row(code, rec["attendance"], rec["notes"], column_timestamp)
         else:
-            self._update_row(code, target_attendance, notes_clean)
+            self._update_row(code, rec["attendance"], rec["notes"])
         self._refresh_stats()
         return True
 
     def _build_record_payload(self, code, attendance, notes, timestamp):
-        rec = {col: self.scan_tree_get(code, col) for col in ["student_id", "name", "phone", "exam", "homework"] if col in self.tree["columns"]}
-        rec.update({"card_id": code, "attendance": attendance, "notes": notes, "timestamp": timestamp})
-        return rec
+        row = self._get_row_values(code)
+        return build_record_payload(row, code, attendance, notes, timestamp)
 
     def _update_row(self, code, attendance, notes, timestamp=None):
         if not self.tree.exists(code): return
@@ -1554,18 +1254,14 @@ class ScanWindow(CTkToplevel):
         if cid.isdigit(): cid = cid.zfill(8)
         
         current_dt = self._current_datetime()
-        column_timestamp = self._format_column_timestamp(current_dt)
-        note_tag = self._format_note_tag(current_dt)
-        default_notes_clean = self._clean_value(default_notes)
-        note_text = f"{note_tag} {default_notes_clean}".strip() if default_notes_clean else note_tag
-        rec = {"card_id": cid, "attendance": "attend", "timestamp": column_timestamp, **values, "notes": note_text}
-        for task in ["exam", "homework"]:
-            if self.restrictions.get(task): rec.setdefault(task, "")
+        rec = build_manual_add_record(cid, values, default_notes, current_dt, self.restrictions)
         
-        try: self.sm.add_record(rec)
+        try: changed = self.sm.add_record(rec)
         except Exception as exc: messagebox.showwarning("Unable to add student", str(exc), parent=self); return False
-        
-        self._manual_additions += 1
+
+        if changed:
+            self._schedule_session_save()
+
         row_values = [rec.get(col, "") for col in self.tree["columns"]]
         
         if self.tree.exists(cid): self.tree.item(cid, values=tuple(row_values))
@@ -1614,8 +1310,4 @@ class ScanWindow(CTkToplevel):
          self._focus_reset_job = self.after_idle(self._focus_scan_entry)
 
     def _student_id_or_phone_exists(self, student_id, phone):
-        df = self.sm._df
-        sid_col, phone_col = self.mapping.get("student_id", "student_id"), self.mapping.get("phone", "phone")
-        id_exists = student_id in df[sid_col].astype(str).values if sid_col in df.columns else False
-        phone_exists = phone in df[phone_col].astype(str).values if phone_col in df.columns else False
-        return id_exists, phone_exists
+        return self.sm.has_student_id_or_phone(student_id, phone)
