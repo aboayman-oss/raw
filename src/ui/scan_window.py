@@ -43,7 +43,7 @@ from utils.helpers import (
     read_data,
     set_dark_title_bar,
 )
-from .focus_view_window import FocusViewWindow
+from .focus_view_window import FocusViewWindow, PLACEHOLDER_TEXT
 
 # Located at the top of scan_window.py, after the other imports
 
@@ -352,6 +352,7 @@ class ScanWindow(CTkToplevel):
 
     def scan_focus_show(self, scan_ctx):
         """Shows and populates the Focus View with student data."""
+        self._persist_active_focus_notes()
         self.scan_focus_cancel_timer()
         if not self.focus_view_container: return
 
@@ -768,7 +769,11 @@ class ScanWindow(CTkToplevel):
             return ""
         raw_text = raw_text.replace("\r\n", "\n")
         candidate = self._clean_value(raw_text)
-        if self._notes_placeholder_active or not candidate:
+        if candidate == PLACEHOLDER_TEXT:
+            self._notes_placeholder_active = True
+            return ""
+        self._notes_placeholder_active = False
+        if not candidate:
             return ""
         original_raw = (ctx.get("original_notes") or "").replace("\r\n", "\n")
         original_clean = self._clean_value(original_raw)
@@ -818,6 +823,7 @@ class ScanWindow(CTkToplevel):
 
     def scan_on_scan(self):
         if self.read_only: return
+        self._persist_active_focus_notes()
         normalized = self.scan_normalize_card(self.scan_entry.get())
         self.scan_entry.delete(0, "end")
         if not normalized: return
@@ -845,6 +851,7 @@ class ScanWindow(CTkToplevel):
 
     def scan_on_open_row(self, iid, *, source="manual", card_id=None):
         if self.read_only or not self.tree.exists(iid): return
+        self._persist_active_focus_notes()
         
         # --- START: MODIFIED LOGIC ---
         context = self.scan_build_context_for_iid(iid, source=source)
@@ -865,13 +872,46 @@ class ScanWindow(CTkToplevel):
     def _notes_have_changed(self):
         """Checks if the notes in the focus view have been modified."""
         if not self.scan_focus_ctx or not self.scan_focus_ctx.get("iid"):
-            return False # No student in focus
+            return False
 
-        new_note_content = "" if self._notes_placeholder_active else self.focus_view.notes.get("1.0", "end-1c").strip()
-        original_notes = self.scan_focus_ctx.get("original_notes", "").strip()
+        new_note_content = self._get_focus_note_content()
+        if new_note_content is None:
+            return False
+        original_notes = self.scan_focus_ctx.get("original_notes", "")
+        return self._normalize_note_text(new_note_content) != self._normalize_note_text(original_notes)
 
-        # Normalize whitespace for a more reliable comparison
-        return new_note_content.replace('\r\n', '\n') != original_notes.replace('\r\n', '\n')
+    def _normalize_note_text(self, value):
+        return ("" if value is None else str(value).strip()).replace("\r\n", "\n")
+
+    def _get_focus_note_content(self):
+        if not self.scan_focus_ctx or not self.scan_focus_ctx.get("iid"):
+            return None
+        try:
+            raw_note_content = self.focus_view.notes.get("1.0", "end-1c")
+        except Exception:
+            return None
+        normalized = self._normalize_note_text(raw_note_content)
+        if normalized == PLACEHOLDER_TEXT:
+            self._notes_placeholder_active = True
+            return ""
+        self._notes_placeholder_active = False
+        return raw_note_content.strip()
+
+    def _sync_focus_note_context(self, notes):
+        if not self.scan_focus_ctx:
+            return
+        clean_notes = self._clean_value(notes)
+        self.scan_focus_ctx["existing_notes"] = clean_notes
+        self.scan_focus_ctx["original_notes"] = clean_notes
+
+    def _persist_active_focus_notes(self, *, flush=False):
+        if not self._is_focus_view_visible():
+            return True
+        if not self._handle_notes_save():
+            return False
+        if flush and self.sm.has_pending_changes():
+            return self._flush_session_save(show_error=True)
+        return True
 
     def _handle_focus_dismiss_request(self):
         """Handles the request to close the focus view, checking for unsaved notes."""
@@ -886,7 +926,8 @@ class ScanWindow(CTkToplevel):
             result = dialog.get_result()
 
             if result is True:  # User clicked "Save"
-                self._handle_notes_save()
+                if not self._handle_notes_save():
+                    return
             elif result is None: # Dialog was closed without a choice
                 return # Do nothing, keep the focus view open
 
@@ -898,25 +939,24 @@ class ScanWindow(CTkToplevel):
     def _handle_notes_save(self):
         """Called when the notes box loses focus. Saves changes if any were made."""
         if not self.scan_focus_ctx or not self.scan_focus_ctx.get("iid"):
-            return # No student is in focus, nothing to save.
+            return True
 
         iid = self.scan_focus_ctx.get("iid")
 
-        raw_note_content = self.focus_view.notes.get("1.0", "end-1c").strip()
-        new_note_content = "" if self._notes_placeholder_active else raw_note_content
-        original_notes = self.scan_focus_ctx.get("original_notes", "").strip()
+        new_note_content = self._get_focus_note_content()
+        if new_note_content is None:
+            return True
+        original_notes = self.scan_focus_ctx.get("original_notes", "")
 
-        # Normalize whitespace for a more reliable comparison to prevent saving unchanged notes
-        if new_note_content.replace('\r\n', '\n') == original_notes.replace('\r\n', '\n'):
-            return # No changes were made
+        if self._normalize_note_text(new_note_content) == self._normalize_note_text(original_notes):
+            return True
         
-        # If notes have changed, save them.
-        self._save_student_notes(iid, new_note_content)
+        return self._save_student_notes(iid, new_note_content)
 
     def _save_student_notes(self, iid, new_notes):
         """Saves only the notes for a student without changing their attendance status."""
         if self.read_only or not self.tree.exists(iid):
-            return
+            return False
 
         # Get current attendance and timestamp to preserve them
         current_attendance = self.scan_tree_get(iid, "attendance")
@@ -928,7 +968,7 @@ class ScanWindow(CTkToplevel):
             changed = self.sm.add_record(rec)
         except Exception as exc:
             messagebox.showwarning("Update Failed", f"Could not save notes: {exc}", parent=self)
-            return
+            return False
 
         if changed:
             self._schedule_session_save()
@@ -936,13 +976,12 @@ class ScanWindow(CTkToplevel):
         # Update the Treeview UI
         self.tree.set(iid, "notes", self._clean_value(new_notes))
 
-        # Update the context's original_notes so we don't try to save again on the next blur
-        if self.scan_focus_ctx:
-            self.scan_focus_ctx["original_notes"] = new_notes
+        self._sync_focus_note_context(new_notes)
 
         # Provide visual feedback to the user and refresh stats
         self.focus_view.show_save_feedback()
         self._refresh_stats()
+        return True
 
     # --- END: NEW SAVE HANDLER METHODS ---
 
@@ -1283,6 +1322,8 @@ class ScanWindow(CTkToplevel):
         return f"Unknown {self._unknown_counter}"
 
     def _on_end_scan(self):
+        if not self._persist_active_focus_notes(flush=True):
+            return
         msg = f"Session '{self.sm.name}' closed (view-only)." if self.read_only else None
         self._finalize_and_close(status_message=msg)
 
