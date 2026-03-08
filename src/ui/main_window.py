@@ -74,7 +74,8 @@ class App(CTk):
 
         if os.path.exists(MAPPING_FILE):
             with open(MAPPING_FILE, encoding="utf-8") as f:
-                self.column_map = json.load(f)
+                raw_map = json.load(f)
+            self.column_map = {k: v.strip().lower() if isinstance(v, str) else v for k, v in raw_map.items()}
 
         loaded_settings = {}
         if os.path.exists(SETTINGS_FILE):

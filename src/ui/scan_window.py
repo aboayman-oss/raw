@@ -725,8 +725,12 @@ class ScanWindow(CTkToplevel):
         tree_container.grid_columnconfigure(0, weight=1)
         
         cols = ["card_id", "student_id", "name", "phone"]
-        if self.restrictions.get("exam"): cols.append("exam")
-        if self.restrictions.get("homework"): cols.append("homework")
+        _exam_col = self.mapping.get("exam", "")
+        _hw_col = self.mapping.get("homework", "")
+        if self.restrictions.get("exam") and _exam_col and _exam_col in self.df.columns:
+            cols.append("exam")
+        if self.restrictions.get("homework") and _hw_col and _hw_col in self.df.columns:
+            cols.append("homework")
         cols += ["attendance", "notes", "timestamp"]
 
         # Manual column widths
@@ -1304,9 +1308,11 @@ class ScanWindow(CTkToplevel):
             {"label": "Attended", "var": self.stats_vars["attended"], "icon": "check_circle.png", "is_progress": False},
             {"label": "Attendance", "var": self.stats_vars["percent"], "icon": "group.png", "is_progress": True},
         ]
-        if self.restrictions.get("exam"):
+        _exam_col = self.mapping.get("exam", "")
+        _hw_col = self.mapping.get("homework", "")
+        if self.restrictions.get("exam") and _exam_col and _exam_col in self.df.columns:
             card_defs.append({"label": "Missing Exam", "var": self.stats_vars["missing_exam"], "icon": "warning.png", "is_progress": False})
-        if self.restrictions.get("homework"):
+        if self.restrictions.get("homework") and _hw_col and _hw_col in self.df.columns:
             card_defs.append({"label": "Missing Homework", "var": self.stats_vars["missing_hw"], "icon": "warning.png", "is_progress": False})
 
         # Place all cards in a single horizontal line, centered
@@ -1396,8 +1402,8 @@ class ScanWindow(CTkToplevel):
         total = len(self._all_iids)
         attended = sum(1 for iid in self._all_iids if self.tree.exists(iid) and self.scan_tree_get(iid, "attendance").lower() == "attend")
         metrics = {"total": total, "attended": attended, "attendance_rate": f"{(attended / total) * 100:.1f}%" if total else "0%"}
-        if self.restrictions.get("exam"): metrics["missing_exam"] = sum(1 for iid in self._all_iids if self.tree.exists(iid) and _grade_missing_or_zero(self.scan_tree_get(iid, "exam")))
-        if self.restrictions.get("homework"):
+        if self.restrictions.get("exam") and "exam" in self.tree["columns"]: metrics["missing_exam"] = sum(1 for iid in self._all_iids if self.tree.exists(iid) and _grade_missing_or_zero(self.scan_tree_get(iid, "exam")))
+        if self.restrictions.get("homework") and "homework" in self.tree["columns"]:
             missing_hw_count = 0
             for iid in self._all_iids:
                 if self.tree.exists(iid) and _grade_missing_or_zero(self.scan_tree_get(iid, "homework")):

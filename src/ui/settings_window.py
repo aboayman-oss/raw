@@ -931,6 +931,7 @@ class SettingsWindow(CTkToplevel):
             return
 
         mapping = self._collect_mapping()
+        mapping = {k: v.strip().lower() for k, v in mapping.items()}
         stage_options = sorted(list(self.stage_items))
         center_options = sorted(list(self.center_items))
         restrictions = {

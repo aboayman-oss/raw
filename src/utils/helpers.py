@@ -395,9 +395,11 @@ def ensure_initial_size(window, *, min_size=None, padding=(0, 0)):
 
 def read_data(path, **kwargs):
     if path.lower().endswith(".xlsx"):
-        return pd.read_excel(path, dtype=str, **kwargs)
+        df = pd.read_excel(path, dtype=str, **kwargs)
     else:
-        return pd.read_csv(path, dtype=str, **kwargs)
+        df = pd.read_csv(path, dtype=str, **kwargs)
+    df.columns = [str(c).strip().lower() for c in df.columns]
+    return df
 
 def write_data(df, path, **kwargs):
     if path.lower().endswith(".xlsx"):
